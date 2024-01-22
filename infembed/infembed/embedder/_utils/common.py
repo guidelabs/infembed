@@ -371,3 +371,7 @@ def _compute_batch_loss_influence_function_base(
         # 'none', 'sum', or 'mean' for
         # `InfluenceFunctionBase` implementations
         raise Exception
+    
+
+class NotFitException(Exception):
+    pass

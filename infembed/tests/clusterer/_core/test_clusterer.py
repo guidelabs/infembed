@@ -1,10 +1,10 @@
 from unittest import TestCase
 from infembed.clusterer._core.rule_clusterer import RuleClusterer
 from infembed.clusterer._core.sklearn_clusterer import SklearnClusterer
-from infembed.tests.embedder._utils.common import build_test_name_func
+from ...utils.common import build_test_name_func
 from parameterized import parameterized
 from infembed.clusterer._core.clusterer_base import ClustererBase
-from infembed.tests.clusterer._utils.common import (
+from .._utils.common import (
     assertClusteringEqual,
     get_random_embeddings_and_metadata,
 )

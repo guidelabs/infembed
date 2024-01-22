@@ -3,15 +3,14 @@ from infembed.embedder._core.embedder_base import EmbedderBase
 from typing import Any, Optional, Tuple, Union, List, Callable
 from infembed.embedder._utils.common import (
     _check_loss_fn,
-    _compute_jacobian_sample_wise_grads_per_batch,
     _format_inputs_dataset,
     _progress_bar_constructor,
     _set_active_parameters,
     _top_eigen,
+    NotFitException,
 )
 from infembed.embedder._utils.kfac import (
     _LayerCaptureAccumulator,
-    _LayerHessianFlattenedAcumulator,
     _LayerHessianFlattenedIndependentAcumulator,
     BlockSplitTwoD,
     DummySplitTwoD,
@@ -23,6 +22,19 @@ from torch import Tensor
 from torch.nn import Module
 from torch.utils.data import DataLoader
 import logging
+from dataclasses import dataclass
+import dill as pickle
+
+
+@dataclass
+class FastKFACEmbedderFitResults:
+    """
+    stores the results of calling `FastKFACEmbedder.fit`
+    """
+
+    layer_R_A_factors: List[List[Tensor]]
+    layer_R_S_factors: List[List[Tensor]]
+    layer_R_scales: List[List[Tensor]]
 
 
 class FastKFACEmbedder(EmbedderBase):
@@ -42,6 +54,7 @@ class FastKFACEmbedder(EmbedderBase):
     furthermore, optionally constructions a block diagonal approximation of the Hessian
     *within* a single layer.
     """
+
     def __init__(
         self,
         model: Module,
@@ -135,9 +148,7 @@ class FastKFACEmbedder(EmbedderBase):
                 BlockSplitTwoD(num_blocks=per_layer_blocks) for _ in self.layer_modules
             ]
 
-        self.layer_R_A_factors = None
-        self.layer_R_S_factors = None
-        self.layer_R_scales = None
+        self.fit_results: Optional[FastKFACEmbedderFitResults] = None
 
     def fit(
         self,
@@ -152,11 +163,7 @@ class FastKFACEmbedder(EmbedderBase):
             dataloader (DataLoader): The dataloader containing data needed to learn how
                     to compute the embeddings
         """
-        (
-            self.layer_R_A_factors,
-            self.layer_R_S_factors,
-            self.layer_R_scales,
-        ) = self._retrieve_projections_fast_kfac_influence_function(
+        self.fit_results = self._retrieve_projections_fast_kfac_influence_function(
             dataloader,
             self.projection_on_cpu,
             self.show_progress,
@@ -167,7 +174,7 @@ class FastKFACEmbedder(EmbedderBase):
         dataloader: DataLoader,
         projection_on_cpu: bool,
         show_progress: bool,
-    ):
+    ) -> FastKFACEmbedderFitResults:
         """
         For each layer, compute expected outer product of layer inputs and output
         gradients (A and S).  This should be possible given total memory is roughly
@@ -214,17 +221,15 @@ class FastKFACEmbedder(EmbedderBase):
             torch.device("cpu") if projection_on_cpu else self.model_device
         )
 
-        logging.info('compute factors')
-        for (projection_dim, layer_A, layer_S) in zip(
+        logging.info("compute factors")
+        for projection_dim, layer_A, layer_S in zip(
             self.projection_dims, layer_As, layer_Ss
         ):
-
             R_A_factors = []
             R_S_factors = []
             R_scales = []
 
             for A, S in zip(layer_A, layer_S):
-
                 # do SVD of A and S.  don't truncate based `hessian_inverse_tol`
                 A_ls, A_vs = _top_eigen(
                     A,
@@ -270,12 +275,11 @@ class FastKFACEmbedder(EmbedderBase):
             layer_R_S_factors.append(R_S_factors)
             layer_R_scales.append(R_scales)
 
-        return layer_R_A_factors, layer_R_S_factors, layer_R_scales
-    
-    def predict(
-        self,
-        dataloader: DataLoader
-    ) -> Tensor:
+        return FastKFACEmbedderFitResults(
+            layer_R_A_factors, layer_R_S_factors, layer_R_scales
+        )
+
+    def predict(self, dataloader: DataLoader) -> Tensor:
         """
         Returns the influence embeddings for `dataloader`.
 
@@ -283,11 +287,16 @@ class FastKFACEmbedder(EmbedderBase):
             dataloader (`DataLoader`): dataloader whose examples to compute influence
                     embeddings for.
         """
+        if self.fit_results is None:
+            raise NotFitException(
+                "The results needed to compute embeddings not available.  Please either call the `fit` or `load` methods."
+            )
+
         if self.show_progress:
             dataloader = _progress_bar_constructor(
                 self, dataloader, "influence embeddings", "training data"
             )
-            
+
         # always return embeddings on cpu
         return_device = torch.device("cpu")
 
@@ -347,7 +356,6 @@ class FastKFACEmbedder(EmbedderBase):
                         block_layer_input,
                         block_layer_output_gradient,
                     ):
-                        
                         # for each factor, simulate dot-product with `outer(S, A)`
                         def get_batch_layer_block_coordinates(
                             block_A_factor,
@@ -433,9 +441,9 @@ class FastKFACEmbedder(EmbedderBase):
                             layer_output_gradient,
                             layer_split_two_d,
                         ) in zip(
-                            self.layer_R_A_factors,
-                            self.layer_R_S_factors,
-                            self.layer_R_scales,
+                            self.fit_results.layer_R_A_factors,
+                            self.fit_results.layer_R_S_factors,
+                            self.fit_results.layer_R_scales,
                             self.layer_modules,
                             layer_inputs,
                             layer_output_gradients,
@@ -445,7 +453,32 @@ class FastKFACEmbedder(EmbedderBase):
                     dim=1,
                 ).to(return_device)
 
-        logging.info('compute embeddings')    
-        return torch.cat(
-            [get_batch_embeddings(batch) for batch in dataloader], dim=0
-        )
+        logging.info("compute embeddings")
+        return torch.cat([get_batch_embeddings(batch) for batch in dataloader], dim=0)
+
+    def save(self, path: str):
+        """
+        This method saves the results of `fit` to a file.
+
+        Args:
+            path (str): path of file to save results in.
+        """
+        with open(path, "wb") as f:
+            pickle.dump(self.fit_results, f)
+
+    def load(self, path: str):
+        """
+        Loads the results saved by the `save` method.  Instead of calling `fit`, one
+        can instead call `load`.
+
+        Args:
+            path (str): path of file to load results from.
+        """
+        with open(path, "rb") as f:
+            self.fit_results = pickle.load(f)
+
+    def reset(self):
+        """
+        Removes the effect of calling `fit` or `load`
+        """
+        self.fit_results = None

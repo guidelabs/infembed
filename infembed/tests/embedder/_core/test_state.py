@@ -2,31 +2,32 @@ from typing import Callable, Union
 from unittest import TestCase
 from infembed.embedder._core.fast_kfac_embedder import FastKFACEmbedder
 from infembed.embedder._core.kfac_embedder import KFACEmbedder
+from infembed.embedder._utils.common import NotFitException, _format_inputs_dataset
 from .._utils.common import (
     EmbedderConstructor,
     _test_compare_implementations,
     USE_GPU_LIST,
+    get_random_model_and_data,
 )
 from parameterized import parameterized
-from ...utils.common import build_test_name_func
+from ...utils.common import assertTensorAlmostEqual, build_test_name_func
+from torch.utils.data import DataLoader
+import torch.nn as nn
+import tempfile
 
 
-class TestFastKFACEmbedder(TestCase):
+class TestSaveLoad(TestCase):
     @parameterized.expand(
         [
             (
-                embedder_constructor_1,
-                embedder_constructor_2,
-                delta,
+                embedder_constructor,
                 unpack_inputs,
                 use_gpu,
                 model_type,
             )
             for use_gpu in USE_GPU_LIST
             for (
-                embedder_constructor_1,
-                embedder_constructor_2,
-                delta,
+                embedder_constructor,
                 model_type,
             ) in [
                 (
@@ -36,6 +37,9 @@ class TestFastKFACEmbedder(TestCase):
                         projection_dim=None,
                         hessian_inverse_tol=0.0,
                     ),
+                    "one_layer_linear",
+                ),
+                (
                     EmbedderConstructor(
                         KFACEmbedder,
                         layers=["linear"],
@@ -43,7 +47,6 @@ class TestFastKFACEmbedder(TestCase):
                         independent_factors=True,
                         hessian_inverse_tol=0.0,
                     ),
-                    1e-2,
                     "one_layer_linear",
                 ),
                 (
@@ -53,6 +56,9 @@ class TestFastKFACEmbedder(TestCase):
                         projection_dim=None,
                         hessian_inverse_tol=0.0,
                     ),
+                    "seq",
+                ),
+                (
                     EmbedderConstructor(
                         KFACEmbedder,
                         layers=["linear1", "linear2"],
@@ -60,7 +66,6 @@ class TestFastKFACEmbedder(TestCase):
                         independent_factors=True,
                         hessian_inverse_tol=0.0,
                     ),
-                    1e-2,
                     "seq",
                 ),
                 (
@@ -73,6 +78,9 @@ class TestFastKFACEmbedder(TestCase):
                         hessian_inverse_tol=-1e-2,
                         hessian_reg=1e-8,
                     ),
+                    "conv",
+                ),
+                (
                     EmbedderConstructor(
                         KFACEmbedder,
                         layers=["linear1", "conv"],
@@ -83,7 +91,6 @@ class TestFastKFACEmbedder(TestCase):
                         hessian_inverse_tol=-1e-2,
                         hessian_reg=1e-8,
                     ),
-                    5e-0,
                     "conv",
                 ),
             ]
@@ -94,27 +101,48 @@ class TestFastKFACEmbedder(TestCase):
         ],
         name_func=build_test_name_func(),
     )
-    def test_compare_implementations_KFAC_vs_FastKFAC(
+    def test_save_load_consistent(
         self,
-        embedder_constructor_1: Callable,
-        embedder_constructor_2: Callable,
-        delta: float,
-        unpack_inputs: bool,
+        embedder_constructor: Callable,
+        unpack_inputs,
         use_gpu: Union[bool, str],
         model_type: str,
     ):
         """
-        this compares `KFACEmbedder` with `FastKFACEmbeddern` where
-        `projection_dim=None`.  in this setting, up to numerical issues, influence
-        should be equal for the two implementations.  of course, we do not know if
-        `KFACEmbedder` is actually correct, so a TODO is to check that in a test.
+        tests that directly computing embeddings and saving the results in `fit`,
+        loading, then computing embeddings gives the same results.  also tests
+        that calling `reset` and then `predict` without calling `load` results in a
+        `NotFitException`.
         """
-        _test_compare_implementations(
-            self,
-            model_type,
-            embedder_constructor_1,
-            embedder_constructor_2,
-            delta,
+        (
+            net,
+            train_dataset,
+            test_samples,
+            test_labels,
+        ) = get_random_model_and_data(
             unpack_inputs,
-            use_gpu,
+            use_gpu=use_gpu,
+            model_type=model_type,
         )
+
+        train_dataloader = DataLoader(train_dataset, batch_size=5)
+        criterion = nn.MSELoss(reduction="none")
+        embedder = embedder_constructor(model=net, loss_fn=criterion)
+        embedder.fit(train_dataloader)
+
+        test_dataloader = _format_inputs_dataset(
+            (test_samples, test_labels)
+            if not unpack_inputs
+            else (*test_samples, test_labels)
+        )
+
+        embeddings_1 = embedder.predict(test_dataloader)
+
+        with tempfile.NamedTemporaryFile() as tmp:
+            embedder.save(tmp.name)
+            embedder.reset()
+            self.assertRaises(NotFitException, embedder.predict, test_dataloader)
+            embedder.load(tmp.name)
+            embeddings_2 = embedder.predict(test_dataloader)
+
+        assertTensorAlmostEqual(self, embeddings_1, embeddings_2, delta=1e-5, mode="sum")

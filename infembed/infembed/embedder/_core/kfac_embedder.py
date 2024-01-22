@@ -1,6 +1,7 @@
 from infembed.embedder._core.embedder_base import EmbedderBase
 from typing import Any, Optional, Tuple, Union, List, Callable
 from infembed.embedder._utils.common import (
+    NotFitException,
     _check_loss_fn,
     _compute_jacobian_sample_wise_grads_per_batch,
     _progress_bar_constructor,
@@ -18,6 +19,13 @@ import torch
 from torch import Tensor
 from torch.nn import Module
 from torch.utils.data import DataLoader
+from dataclasses import dataclass
+import dill as pickle
+
+
+@dataclass
+class KFACEmbedderFitResults:
+    layer_Rs: Tensor
 
 
 class KFACEmbedder(EmbedderBase):
@@ -46,6 +54,7 @@ class KFACEmbedder(EmbedderBase):
         module
     - figure out how to turn into sklearn pipeline
     """
+
     def __init__(
         self,
         model: Module,
@@ -130,7 +139,7 @@ class KFACEmbedder(EmbedderBase):
         self.show_progress = show_progress
         self.independent_factors = independent_factors
 
-        self.layer_Rs = None
+        self.fit_results: Optional[KFACEmbedderFitResults] = None
 
     def fit(
         self,
@@ -145,7 +154,7 @@ class KFACEmbedder(EmbedderBase):
             dataloader (DataLoader): The dataloader containing data needed to learn how
                     to compute the embeddings
         """
-        self.layer_Rs = self._retrieve_projections_kfac_influence_function(
+        self.fit_results = self._retrieve_projections_kfac_influence_function(
             dataloader,
             self.projection_on_cpu,
             self.show_progress,
@@ -158,7 +167,7 @@ class KFACEmbedder(EmbedderBase):
         projection_on_cpu: bool,
         show_progress: bool,
         independent_factors: bool,
-    ):
+    ) -> KFACEmbedderFitResults:
         """
         For each layer, returns the basis of truncated SVD.  Explicitly form the
         Hessian in flattened (2D) form, so could directly apply SVD to it.
@@ -224,12 +233,9 @@ class KFACEmbedder(EmbedderBase):
             ls = (1.0 / ls) ** 0.5
             layer_Rs.append((ls.unsqueeze(0) * vs).to(device=projection_device))
 
-        return layer_Rs
+        return KFACEmbedderFitResults(layer_Rs)
 
-    def predict(
-        self,
-        dataloader: DataLoader
-    ) -> Tensor:
+    def predict(self, dataloader: DataLoader) -> Tensor:
         """
         Returns the influence embeddings for `dataloader`.
 
@@ -237,11 +243,16 @@ class KFACEmbedder(EmbedderBase):
             dataloader (`DataLoader`): dataloader whose examples to compute influence
                     embeddings for.
         """
+        if self.fit_results is None:
+            raise NotFitException(
+                "The results needed to compute embeddings not available.  Please either call the `fit` or `load` methods."
+            )
+        
         if self.show_progress:
             dataloader = _progress_bar_constructor(
                 self, dataloader, "influence embeddings", "training data"
             )
-            
+
         # always return embeddings on cpu
         return_device = torch.device("cpu")
 
@@ -259,7 +270,7 @@ class KFACEmbedder(EmbedderBase):
             jacobians = _compute_jacobian_sample_wise_grads_per_batch(
                 self, features, labels, loss_fn, reduction_type
             )
-            
+
             with torch.no_grad():
 
                 def get_batch_layer_embeddings(R, layer, layer_params):
@@ -285,7 +296,7 @@ class KFACEmbedder(EmbedderBase):
                     [
                         get_batch_layer_embeddings(R, layer, layer_params)
                         for (R, layer, (_, layer_params)) in zip(
-                            self.layer_Rs,
+                            self.fit_results.layer_Rs,
                             self.layer_modules,
                             _extract_layer_parameters(
                                 self.model, self.layer_modules, jacobians
@@ -295,6 +306,31 @@ class KFACEmbedder(EmbedderBase):
                     dim=1,
                 )
 
-        return torch.cat(
-            [get_batch_embeddings(batch) for batch in dataloader], dim=0
-        )
+        return torch.cat([get_batch_embeddings(batch) for batch in dataloader], dim=0)
+
+    def save(self, path: str):
+        """
+        This method saves the results of `fit` to a file.
+
+        Args:
+            path (str): path of file to save results in.
+        """
+        with open(path, "wb") as f:
+            pickle.dump(self.fit_results, f)
+
+    def load(self, path: str):
+        """
+        Loads the results saved by the `save` method.  Instead of calling `fit`, one
+        can instead call `load`.
+
+        Args:
+            path (str): path of file to load results from.
+        """
+        with open(path, "rb") as f:
+            self.fit_results = pickle.load(f)
+
+    def reset(self):
+        """
+        Removes the effect of calling `fit` or `load`
+        """
+        self.fit_results = None

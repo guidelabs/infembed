@@ -31,9 +31,29 @@ class EmbedderBase(ABC):
         Computes the embeddings for a dataloader.
 
         Args:
-            dataloader (`DataLoader`): dataloader whose examples to compute influence
+            dataloader (DataLoader): dataloader whose examples to compute influence
                     embeddings for.
         """
 
     def get_name(self):
         return type(self).__name__
+    
+    def save(self, path: str):
+        """
+        For some implementations, the `fit` method does computation whose results we
+        may want to save.  This method saves those results to a file.
+
+        Args:
+            path (str): path of file to save results in.
+        """
+        pass
+
+    def load(self, path: str):
+        """
+        Loads the results saved by the `save` method.  Instead of calling `fit`, one
+        can instead call `load`.
+
+        Args:
+            path (str): path of file to load results from.
+        """
+        pass
