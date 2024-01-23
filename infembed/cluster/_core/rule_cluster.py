@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from typing import Callable, List, Optional
-from infembed.clusterer._core.clusterer_base import ClustererBase
+from infembed.cluster._core.cluster_base import ClustererBase
 import pandas as pd
 from infembed.utils.common import Data
 from infembed.clusterer._utils.common import get_canonical_clustering
@@ -13,13 +13,13 @@ class _Node:
     the indices of the examples assigned to it when fitting, i.e. building the tree.
     """
 
-    clusterer: ClustererBase
+    cluster: ClusterBase
     children: Optional[List["Node"]]
     fit_indices: Optional[List[int]] = None
 
 
 def _node_find(
-    clusterer_getter,
+    cluster_getter,
     data,
     indices,
     depth,
@@ -36,8 +36,8 @@ def _node_find(
     if depth >= len(depth_to_K) or stopping_rule(data):
         return None
 
-    clusterer = clusterer_getter(depth_to_K[depth])
-    # using `fit_predict` is safer, because not all implementations of `ClustererBase`
+    cluster = cluster_getter(depth_to_K[depth])
+    # using `fit_predict` is safer, because not all implementations of `ClusterBase`
     # implement `fit` and `predict`, separately
     clusters = clusterer.fit_predict(data)
     cluster_datas = [data[cluster] for cluster in clusters]
@@ -46,7 +46,7 @@ def _node_find(
     children = [None for _ in range(len(clusters))]
     for (k, (cluster_data, cluster_indices)) in enumerate(zip(cluster_datas, cluster_indicess)):
         children[k] = _node_find(
-            clusterer_getter,
+            cluster_getter,
             cluster_data,
             cluster_indices,
             depth + 1,
@@ -63,7 +63,7 @@ def _node_find(
 
 def _get_trail_to_predict_cluster(data, indices, node, trail):
     """
-    returns dictionary mapping from the "trail" to a cluster, i.e. the index of the
+    Returns dictionary mapping from the "trail" to a cluster, i.e. the index of the
     branch to go down at each node on the path to the node representing the cluster,
     to the indices of the examples in the clustering of `data`
     """
@@ -92,7 +92,7 @@ def _get_trail_to_predict_cluster(data, indices, node, trail):
 
 def _get_trail_to_fit_cluster(node, trail):
     """
-    returns dictionary mapping from the "trail" to a cluster, i.e. the index of the
+    Returns dictionary mapping from the "trail" to a cluster, i.e. the index of the
     branch to go down at each node on the path to the node representing the cluster,
     to the indices of the examples in the clustering of fitting data, which was
     constructed at fitting time.
