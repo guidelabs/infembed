@@ -31,8 +31,8 @@ class EmbedderBase(ABC):
         Computes the embeddings for a dataloader.
 
         Args:
-            dataloader (DataLoader): dataloader whose examples to compute influence
-                    embeddings for.
+            dataloader (DataLoader): dataloader whose examples to compute embeddings
+                    for.
         """
 
     def get_name(self):

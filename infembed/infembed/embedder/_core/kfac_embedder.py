@@ -1,3 +1,4 @@
+import logging
 from infembed.embedder._core.embedder_base import EmbedderBase
 from typing import Any, Optional, Tuple, Union, List, Callable
 from infembed.embedder._utils.common import (
@@ -154,14 +155,14 @@ class KFACEmbedder(EmbedderBase):
             dataloader (DataLoader): The dataloader containing data needed to learn how
                     to compute the embeddings
         """
-        self.fit_results = self._retrieve_projections_kfac_influence_function(
+        self.fit_results = self._retrieve_projections_kfac_embedder(
             dataloader,
             self.projection_on_cpu,
             self.show_progress,
             self.independent_factors,
         )
 
-    def _retrieve_projections_kfac_influence_function(
+    def _retrieve_projections_kfac_embedder(
         self,
         dataloader: DataLoader,
         projection_on_cpu: bool,
@@ -237,20 +238,20 @@ class KFACEmbedder(EmbedderBase):
 
     def predict(self, dataloader: DataLoader) -> Tensor:
         """
-        Returns the influence embeddings for `dataloader`.
+        Returns the embeddings for `dataloader`.
 
         Args:
-            dataloader (`DataLoader`): dataloader whose examples to compute influence
-                    embeddings for.
+            dataloader (`DataLoader`): dataloader whose examples to compute embeddings
+                    for.
         """
         if self.fit_results is None:
             raise NotFitException(
                 "The results needed to compute embeddings not available.  Please either call the `fit` or `load` methods."
             )
-        
+
         if self.show_progress:
             dataloader = _progress_bar_constructor(
-                self, dataloader, "influence embeddings", "training data"
+                self, dataloader, "embeddings", "training data"
             )
 
         # always return embeddings on cpu
@@ -306,7 +307,11 @@ class KFACEmbedder(EmbedderBase):
                     dim=1,
                 )
 
-        return torch.cat([get_batch_embeddings(batch) for batch in dataloader], dim=0)
+        with torch.no_grad():
+            logging.info("compute embeddings")
+            return torch.cat(
+                [get_batch_embeddings(batch) for batch in dataloader], dim=0
+            )
 
     def save(self, path: str):
         """

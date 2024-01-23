@@ -124,7 +124,9 @@ class FastKFACEmbedder(EmbedderBase):
             self.layer_modules = _set_active_parameters(model, layers)
         else:
             # only use supported layers.  TODO: add warning that some layers are not supported
-            self.layer_modules = [layer for layer in model.modules() if type(layer) in SUPPORTED_LAYERS]
+            self.layer_modules = [
+                layer for layer in model.modules() if type(layer) in SUPPORTED_LAYERS
+            ]
 
         # below initializations are specific to `KFACEmbedder`
 
@@ -168,13 +170,13 @@ class FastKFACEmbedder(EmbedderBase):
             dataloader (DataLoader): The dataloader containing data needed to learn how
                     to compute the embeddings
         """
-        self.fit_results = self._retrieve_projections_fast_kfac_influence_function(
+        self.fit_results = self._retrieve_projections_fast_kfac_embedder(
             dataloader,
             self.projection_on_cpu,
             self.show_progress,
         )
 
-    def _retrieve_projections_fast_kfac_influence_function(
+    def _retrieve_projections_fast_kfac_embedder(
         self,
         dataloader: DataLoader,
         projection_on_cpu: bool,
@@ -286,11 +288,11 @@ class FastKFACEmbedder(EmbedderBase):
 
     def predict(self, dataloader: DataLoader) -> Tensor:
         """
-        Returns the influence embeddings for `dataloader`.
+        Returns the embeddings for `dataloader`.
 
         Args:
-            dataloader (`DataLoader`): dataloader whose examples to compute influence
-                    embeddings for.
+            dataloader (`DataLoader`): dataloader whose examples to compute embeddings
+                    for.
         """
         if self.fit_results is None:
             raise NotFitException(
@@ -299,7 +301,7 @@ class FastKFACEmbedder(EmbedderBase):
 
         if self.show_progress:
             dataloader = _progress_bar_constructor(
-                self, dataloader, "influence embeddings", "training data"
+                self, dataloader, "embeddings", "training data"
             )
 
         # always return embeddings on cpu
@@ -426,37 +428,38 @@ class FastKFACEmbedder(EmbedderBase):
                         dim=1,
                     )
 
-                return torch.cat(
-                    [
-                        get_batch_layer_embeddings(
-                            R_A_factors,
-                            R_S_factors,
-                            R_scales,
-                            layer,
-                            layer_input,
-                            layer_output_gradient,
-                            layer_split_two_d,
-                        )
-                        for (
-                            R_A_factors,
-                            R_S_factors,
-                            R_scales,
-                            layer,
-                            layer_input,
-                            layer_output_gradient,
-                            layer_split_two_d,
-                        ) in zip(
-                            self.fit_results.layer_R_A_factors,
-                            self.fit_results.layer_R_S_factors,
-                            self.fit_results.layer_R_scales,
-                            self.layer_modules,
-                            layer_inputs,
-                            layer_output_gradients,
-                            self.layer_split_two_ds,
-                        )
-                    ],
-                    dim=1,
-                ).to(return_device)
+                with torch.no_grad():
+                    return torch.cat(
+                        [
+                            get_batch_layer_embeddings(
+                                R_A_factors,
+                                R_S_factors,
+                                R_scales,
+                                layer,
+                                layer_input,
+                                layer_output_gradient,
+                                layer_split_two_d,
+                            )
+                            for (
+                                R_A_factors,
+                                R_S_factors,
+                                R_scales,
+                                layer,
+                                layer_input,
+                                layer_output_gradient,
+                                layer_split_two_d,
+                            ) in zip(
+                                self.fit_results.layer_R_A_factors,
+                                self.fit_results.layer_R_S_factors,
+                                self.fit_results.layer_R_scales,
+                                self.layer_modules,
+                                layer_inputs,
+                                layer_output_gradients,
+                                self.layer_split_two_ds,
+                            )
+                        ],
+                        dim=1,
+                    ).to(return_device)
 
         logging.info("compute embeddings")
         return torch.cat([get_batch_embeddings(batch) for batch in dataloader], dim=0)

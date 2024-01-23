@@ -371,7 +371,124 @@ def _compute_batch_loss_influence_function_base(
         # 'none', 'sum', or 'mean' for
         # `InfluenceFunctionBase` implementations
         raise Exception
-    
+
 
 class NotFitException(Exception):
     pass
+
+
+def _parameter_to(params: Tuple[Tensor, ...], **to_kwargs) -> Tuple[Tensor, ...]:
+    """
+    applies the `to` method to all tensors in a tuple of tensors
+    """
+    return tuple(param.to(**to_kwargs) for param in params)
+
+
+def _parameter_multiply(params: Tuple[Tensor, ...], c: Tensor) -> Tuple[Tensor, ...]:
+    """
+    multiplies all tensors in a tuple of tensors by a given scalar
+    """
+    return tuple(param * c for param in params)
+
+
+def _parameter_dot(
+    params_1: Tuple[Tensor, ...], params_2: Tuple[Tensor, ...]
+) -> Tensor:
+    """
+    returns the dot-product of 2 tensors, represented as tuple of tensors.
+    """
+    return torch.Tensor(
+        sum(
+            torch.sum(param_1 * param_2)
+            for (param_1, param_2) in zip(params_1, params_2)
+        )
+    )
+
+
+def _parameter_add(
+    params_1: Tuple[Tensor, ...], params_2: Tuple[Tensor, ...]
+) -> Tuple[Tensor, ...]:
+    """
+    returns the sum of 2 tensors, represented as tuple of tensors.
+    """
+    return tuple(param_1 + param_2 for (param_1, param_2) in zip(params_1, params_2))
+
+
+def _parameter_linear_combination(
+    paramss: List[Tuple[Tensor, ...]], cs: Tensor
+) -> Tuple[Tensor, ...]:
+    """
+    scales each parameter (tensor of tuples) in a list by the corresponding scalar in a
+    1D tensor of the same length, and sums up the scaled parameters
+    """
+    assert len(cs.shape) == 1
+    result = _parameter_multiply(paramss[0], cs[0])
+    for params, c in zip(paramss[1:], cs[1:]):
+        result = _parameter_add(result, _parameter_multiply(params, c))
+    return result
+
+
+def _set_attr(obj, names, val):
+    if len(names) == 1:
+        setattr(obj, names[0], val)
+    else:
+        _set_attr(getattr(obj, names[0]), names[1:], val)
+
+
+def _del_attr(obj, names):
+    if len(names) == 1:
+        delattr(obj, names[0])
+    else:
+        _del_attr(getattr(obj, names[0]), names[1:])
+
+
+def _model_make_functional(model, param_names, params):
+    params = tuple([param.detach().requires_grad_() for param in params])
+
+    for param_name in param_names:
+        _del_attr(model, param_name.split("."))
+
+    return params
+
+
+def _model_reinsert_params(model, param_names, params, register=False):
+    for param_name, param in zip(param_names, params):
+        _set_attr(
+            model,
+            param_name.split("."),
+            torch.nn.Parameter(param) if register else param,
+        )
+
+
+def _custom_functional_call(model, d, *features):
+    param_names, params = zip(*list(d.items()))
+    _params = _model_make_functional(model, param_names, params)
+    _model_reinsert_params(model, param_names, params)
+    out = model(*features)
+    _model_reinsert_params(model, param_names, _params, register=True)
+    return out
+
+
+def _functional_call(model, d, features):
+    """
+    Makes a call to `model.forward`, which is treated as a function of the parameters
+    in `d`, a dict from parameter name to parameter, instead of as a function of
+    `features`, the argument that is unpacked to `model.forward` (i.e.
+    `model.forward(*features)`).  Depending on what version of PyTorch is available,
+    we either use our own implementation, or directly use `torch.nn.utils.stateless`
+    or `torch.func.functional_call`.  Put another way, this function mimics the latter
+    two implementations, using our own when the PyTorch version is too old.
+    """
+    import torch
+
+    version = torch.__version__
+    if version < "1.12":
+        return _custom_functional_call(model, d, features)
+    elif version >= "1.12" and version < "2.0":
+        import torch.nn.utils.stateless
+
+        return torch.nn.utils.stateless.functional_call(model, d, features)
+    else:
+        import torch.func
+
+        return torch.func.functional_call(model, d, features)
