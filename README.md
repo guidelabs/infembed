@@ -1,6 +1,6 @@
-# infembed
+# Influence Embeddings for Error Detection
 
-![infembed Logo](./img/captum_logo.png)
+![infembed Logo](./docs/fig/logo_v1.png)
 
 <hr/>
 
@@ -14,9 +14,23 @@
 [![Conda Recipe](https://img.shields.io/static/v1?logo=conda-forge&style=flat&color=green&label=recipe&message=captum)][#conda-forge-feedstock]
 [![Docs - GitHub.io](https://img.shields.io/static/v1?logo=captum&style=flat&color=pink&label=docs&message=captum)][#docs-package]
 
-[#github-license]: https://github.com/pytorch/captum/blob/master/LICENSE
+[#github-license]: https://github.com/guidelabs/infembed/blob/master/LICENSE
 [#pypi-package]: https://pypi.org/project/captum/
 [#conda-forge-package]: https://anaconda.org/conda-forge/captum
 [#conda-forge-feedstock]: https://github.com/conda-forge/captum-feedstock
 [#docs-package]: https://captum.ai/
 <!--- BADGES: END --->
+
+<hr/>
+
+InfEmbed is an error detection library for machine learning models built in PyTorch.
+
+## Installation
+
+## Getting Started
+
+## FAQ
+
+## Talks and Papers
+
+## License
