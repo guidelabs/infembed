@@ -1,6 +1,6 @@
 # Influence Embeddings for Error Detection
 
-![infembed Logo](./docs/fig/logo_v1.png)
+![infembed Logo](./docs/logo/banner.png)
 
 <hr/>
 
