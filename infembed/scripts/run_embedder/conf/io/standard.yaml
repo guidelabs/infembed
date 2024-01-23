@@ -1,0 +1,3 @@
+embeddings_path: 'embeddings.pt'
+fit_results_path: 'fit_results.pickle'
+load_fit_results: false

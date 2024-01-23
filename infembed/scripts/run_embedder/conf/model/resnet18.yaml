@@ -1,0 +1,14 @@
+model:
+  _target_: models._utils.common.load_model
+  model:
+    _target_: torchvision.models.resnet18
+    # weights:
+    #   _target_: torchvision.models.ResNet18_Weights.DEFAULT
+  device: 'cuda:0'
+layers:
+  - "fc"
+  - "layer4.0.conv1"
+  - "layer4.0.conv2"
+  - "layer4.0.downsample.0"
+  - "layer4.1.conv1"
+  - "layer4.1.conv2"

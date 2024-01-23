@@ -1,5 +1,4 @@
 from infembed.embedder._core.embedder_base import EmbedderBase
-from infembed.embedder._core.embedder_base import EmbedderBase
 from typing import Any, Optional, Tuple, Union, List, Callable
 from infembed.embedder._utils.common import (
     _check_loss_fn,
@@ -24,6 +23,7 @@ from torch.utils.data import DataLoader
 import logging
 from dataclasses import dataclass
 import dill as pickle
+import torch.nn as nn
 
 
 @dataclass
@@ -35,6 +35,9 @@ class FastKFACEmbedderFitResults:
     layer_R_A_factors: List[List[Tensor]]
     layer_R_S_factors: List[List[Tensor]]
     layer_R_scales: List[List[Tensor]]
+
+
+SUPPORTED_LAYERS = [nn.Linear, nn.Conv2d]
 
 
 class FastKFACEmbedder(EmbedderBase):
@@ -117,9 +120,11 @@ class FastKFACEmbedder(EmbedderBase):
 
         self.layer_modules = None
         if not (layers is None):
+            # TODO: should let `self.layer_modules` only contain supported layers
             self.layer_modules = _set_active_parameters(model, layers)
         else:
-            self.layer_modules = list(model.modules())
+            # only use supported layers.  TODO: add warning that some layers are not supported
+            self.layer_modules = [layer for layer in model.modules() if type(layer) in SUPPORTED_LAYERS]
 
         # below initializations are specific to `KFACEmbedder`
 
