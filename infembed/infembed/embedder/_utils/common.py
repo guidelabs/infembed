@@ -100,7 +100,9 @@ def _check_loss_fn(
     return reduction_type
 
 
-def _set_active_parameters(model: Module, layers: List[str]) -> List[Module]:
+def _set_active_parameters(
+    model: Module, layers: List[str], supported_layers: Optional[List[type]]=None,
+) -> List[Module]:
     """
     sets relevant parameters, as indicated by `layers`, to have `requires_grad=True`,
     and returns relevant modules.
@@ -109,6 +111,18 @@ def _set_active_parameters(model: Module, layers: List[str]) -> List[Module]:
     assert len(layers) > 0, "`layers` cannot be empty!"
     assert isinstance(layers[0], str), "`layers` should contain str layer names."
     layer_modules = [_get_module_from_name(model, layer) for layer in layers]
+    if supported_layers is not None:
+        layer_modules = [
+            layer_module
+            for layer_module in layer_modules
+            if not all(
+                [
+                    (not isinstance(layer_module, supported_layer))
+                    for supported_layer in supported_layers
+                ]
+            )
+        ]
+
     for layer, layer_module in zip(layers, layer_modules):
         for name, param in layer_module.named_parameters():
             if not param.requires_grad:
@@ -222,7 +236,7 @@ def _top_eigen(
     rule = torch.sum(vs, dim=0) > 0  # entries are 0/1
     rule_multiplier = (2 * rule) - 1  # entries are -1/1
     vs = vs * rule_multiplier.unsqueeze(0)
-
+    assert len(ls) == H.shape[0]
     return ls, vs
 
 

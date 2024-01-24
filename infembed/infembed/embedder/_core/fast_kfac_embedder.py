@@ -65,13 +65,14 @@ class FastKFACEmbedder(EmbedderBase):
         loss_fn: Optional[Union[Module, Callable]] = None,
         test_loss_fn: Optional[Union[Module, Callable]] = None,
         sample_wise_grads_per_batch: bool = False,
-        projection_dim: Union[int, List[int]] = 50,
+        layer_block_projection_dim: Optional[int] = None,
         seed: int = 0,
         hessian_reg: float = 1e-6,
         hessian_inverse_tol: float = 1e-5,
         projection_on_cpu: bool = True,
         show_progress: bool = False,
         per_layer_blocks: int = 1,
+        projection_dim: Optional[int] = 50,
     ):
         """
         Args:
@@ -86,13 +87,19 @@ class FastKFACEmbedder(EmbedderBase):
             sample_wise_grads_per_batch (bool, optional): Whether to use an efficiency
                     trick to compute the per-example gradients.  Only works if layers we
                     consider gradients in are `Linear` or `Conv2d` layers.
-            projection_dim (int or list of int): This argument specifies the number of
-                    dimensions in the embedding that come from each layer.  This can either
-                    be a list of integers with the same number of elements as `layers`, or
-                    a single integer, in which case every layer contributes the same
-                    number of dimensions.  If `per_layer_blocks` is greater than 1, this
-                    argument specifies the number of dimensions that come from each block
-                    of each layer.
+            layer_block_projection_dim (int): Determines the dimension of the embedding
+                    by specifying the number of dimensions in the embedding that come
+                    from each block in each layer. Each block in each layer is assumed
+                    to contribute the same number of dimensions.  Either this or the
+                    `projection_dim` argument should be specified, but not both, as
+                    both arguments serve the same purpose: determining the dimension
+                    of the embedding.
+            per_layer_blocks (int): The number of blocks in the block diagonal
+                    approximation of the Hessian within a single layer.
+            projection_dim (int): Directly determines the dimension of the embedding.
+                    Either this or the `layer_block_projection_dim` argument should be
+                    specified, but not both, as both arguments serve the same purpose:
+                    determining the dimension of the embedding.
         """
         self.model = model
 
@@ -121,7 +128,9 @@ class FastKFACEmbedder(EmbedderBase):
         self.layer_modules = None
         if not (layers is None):
             # TODO: should let `self.layer_modules` only contain supported layers
-            self.layer_modules = _set_active_parameters(model, layers)
+            self.layer_modules = _set_active_parameters(
+                model, layers, supported_layers=SUPPORTED_LAYERS
+            )
         else:
             # only use supported layers.  TODO: add warning that some layers are not supported
             self.layer_modules = [
@@ -129,11 +138,12 @@ class FastKFACEmbedder(EmbedderBase):
             ]
 
         # below initializations are specific to `KFACEmbedder`
-
-        # expand `projection_dim` to list if not one
-        if not isinstance(projection_dim, list):
-            projection_dim = [projection_dim for _ in self.layer_modules]
-        self.projection_dims = projection_dim
+        # only one of the below 2 arguments should be specified
+        # assert (
+        #     int(layer_block_projection_dim is None) + int(projection_dim is None) == 1
+        # ), "only one of `layer_block_projection_dim` or `projection_dim` should be specified"
+        self.layer_block_projection_dim = layer_block_projection_dim
+        self.projection_dim = projection_dim
 
         torch.manual_seed(seed)  # for reproducibility
 
@@ -175,20 +185,32 @@ class FastKFACEmbedder(EmbedderBase):
             self.projection_on_cpu,
             self.show_progress,
         )
+        return self
 
-    def _retrieve_projections_fast_kfac_embedder(
+    def _retrieve_projections_fast_kfac_embedder_helper(
         self,
         dataloader: DataLoader,
         projection_on_cpu: bool,
         show_progress: bool,
-    ) -> FastKFACEmbedderFitResults:
+        layer_block_projection_dim: Optional[int] = None,
+        eigenvalue_threshold: Optional[int] = None,
+        return_eigenvalue_only: bool = False,
+    ):
         """
-        For each layer, compute expected outer product of layer inputs and output
-        gradients (A and S).  This should be possible given total memory is roughly
-        same as model size.  Then, for each layer, extract the two kinds of vectors.
+        Three use cases: 1) extract a specified number of eigenvalues per layer based
+        on `layer_block_projection_dim`, and only return the eigenvalues, 2) extract a
+        specified number of eigenvectors / eigenvalues per layer based on
+        `layer_block_projection_dim`, 3) extract eigenvectors / eigenvalues for which
+        the eigenvalue is above `eigenvalue_threshold`.
         """
+        # # only one of the below 2 arguments should be specified
+        # assert (
+        #     int(layer_block_projection_dim is None) + int(eigenvalue_threshold is None)
+        #     == 1
+        # )
+
         # get A and S for each layer
-        logging.warning("compute training data statistics")
+        logging.info("compute training data statistics")
         layer_accumulators = [
             _LayerHessianFlattenedIndependentAcumulator(layer, split_two_d)
             for (layer, split_two_d) in zip(self.layer_modules, self.layer_split_two_ds)
@@ -222,28 +244,29 @@ class FastKFACEmbedder(EmbedderBase):
         # TODO: consider adjusting `projection_dim` based on the number of blocks
         layer_R_A_factors = []
         layer_R_S_factors = []
-        layer_R_scales = []
+        layer_R_ls = []
+        # layer_R_scales = []
 
         projection_device = (
             torch.device("cpu") if projection_on_cpu else self.model_device
         )
 
-        logging.warning("compute factors")
-        for projection_dim, layer_A, layer_S, layer in zip(
-            self.projection_dims, layer_As, layer_Ss, self.layer_modules
+        logging.info("compute factors")
+        for k, (layer_A, layer_S, layer) in enumerate(
+            zip(layer_As, layer_Ss, self.layer_modules)
         ):
-            logging.warning(f"compute factors for layer {layer}")
-            logging.debug(f"compute factors for layer with id f{id(layer)}")
-            
+            logging.info(f"compute factors for layer {layer}")
+
             R_A_factors = []
             R_S_factors = []
-            R_scales = []
+            R_ls = []
+            # R_scales = []
 
             for A, S in zip(layer_A, layer_S):
                 # do SVD of A and S.  don't truncate based `hessian_inverse_tol`
                 A_ls, A_vs = _top_eigen(
                     A,
-                    None,
+                    None,  # TODO: to save memory, use heuristic to limit returns
                     self.hessian_reg,
                     0,
                 )
@@ -259,32 +282,134 @@ class FastKFACEmbedder(EmbedderBase):
                 ls = torch.outer(A_ls, S_ls)
                 num_S_factors = len(S_ls)
 
-                top_ijs = [
-                    (int(flattened_pos / num_S_factors), flattened_pos % num_S_factors)
-                    for flattened_pos in torch.argsort(ls.view(-1), descending=True)[
-                        :projection_dim
+                # figure out indices of eigenvalues / eigenvectors to keep
+                if eigenvalue_threshold is None:
+                    # if keeping based on `layer_block_projection_dim`
+                    flattened_indices_to_keep = torch.argsort(
+                        ls.view(-1), descending=True
+                    )[:layer_block_projection_dim]
+                    assert layer_block_projection_dim is None
+                else:
+                    # if keeping based on `eigenvalue_threshold`
+                    # TODO: can sort so that largest eigenvalue is first
+                    flattened_indices_to_keep = [
+                        idx
+                        for (idx, l) in enumerate(ls.view(-1))
+                        if l > eigenvalue_threshold
                     ]
+
+                top_ijs = [
+                    (int(flattened_idx / num_S_factors), flattened_idx % num_S_factors)
+                    for flattened_idx in flattened_indices_to_keep
                 ]
+
+                # top_ijs = [
+                #     (int(flattened_pos / num_S_factors), flattened_pos % num_S_factors)
+                #     for flattened_pos in torch.argsort(ls.view(-1), descending=True)[
+                #         :projection_dim
+                #     ]
+                # ]
 
                 top_ls = torch.Tensor([ls[i, j] for (i, j) in top_ijs])
 
-                # add factors for both
-                R_A_factors.append(
-                    torch.stack([A_vs[:, i] for (i, _) in top_ijs], dim=0).to(
-                        device=projection_device
-                    )
-                )
-                R_S_factors.append(
-                    torch.stack([S_vs[:, j] for (_, j) in top_ijs], dim=0).to(
-                        device=projection_device
-                    )
-                )
-                R_scales.append((top_ls**-0.5).to(device=projection_device))
+                # add factors for both if not `return_eigenvalue_only`.  otherwise,
+                # return dummy's for the factors
+                if not return_eigenvalue_only:
+                    # appending the factors for a block
+                    if len(top_ijs) == 0:
+                        # if not using factors from block, append dummy value of `None`
+                        R_A_factors.append(None)
+                        R_S_factors.append(None)
+                    else:
+                        R_A_factors.append(
+                            torch.stack([A_vs[:, i] for (i, _) in top_ijs], dim=0).to(
+                                device=projection_device
+                            )
+                        )
+                        R_S_factors.append(
+                            torch.stack([S_vs[:, j] for (_, j) in top_ijs], dim=0).to(
+                                device=projection_device
+                            )
+                        )
+
+                R_ls.append(top_ls.to(device=projection_device))
+                # R_scales.append((top_ls**-0.5).to(device=projection_device))
 
             layer_R_A_factors.append(R_A_factors)
             layer_R_S_factors.append(R_S_factors)
-            layer_R_scales.append(R_scales)
+            layer_R_ls.append(R_ls)
+            # layer_R_scales.append(R_scales)
 
+        return layer_R_A_factors, layer_R_S_factors, layer_R_ls
+        # return FastKFACEmbedderFitResults(
+        #     layer_R_A_factors, layer_R_S_factors, layer_R_scales
+        # )
+
+    def _retrieve_projections_fast_kfac_embedder(
+        self,
+        dataloader: DataLoader,
+        projection_on_cpu: bool,
+        show_progress: bool,
+    ):
+        """
+        For each layer, compute expected outer product of layer inputs and output
+        gradients (A and S).  This should be possible given total memory is roughly
+        same as model size.  Then, for each layer, extract the two kinds of vectors.
+
+        A helper function is used to return embeddings of the desired dimension.
+        """
+        if self.layer_block_projection_dim is not None or self.projection_dim is None:
+            # if specified `layer_block_projection_dim`, directly compute
+            # eigenvectors / eigenvectors
+            (
+                layer_R_A_factors,
+                layer_R_S_factors,
+                layer_R_ls,
+            ) = self._retrieve_projections_fast_kfac_embedder_helper(
+                dataloader,
+                projection_on_cpu,
+                show_progress,
+                layer_block_projection_dim=self.layer_block_projection_dim,
+                eigenvalue_threshold=None,
+                return_eigenvalue_only=False,
+            )
+        else:
+            assert self.projection_dim is not None
+            # first get all eigenvalues to get eigenvalue threshold
+            _, _, layer_R_ls = self._retrieve_projections_fast_kfac_embedder_helper(
+                dataloader,
+                projection_on_cpu,
+                show_progress,
+                layer_block_projection_dim=None,  # TODO: for now return all eigenvalues
+                eigenvalue_threshold=None,
+                return_eigenvalue_only=True,
+            )
+            # figure out eigenvalue threshold
+            all_ls = torch.Tensor([l for R_ls in layer_R_ls for ls in R_ls for l in ls])
+            sorted_ls = torch.sort(all_ls, descending=True).values
+            # import pdb
+            # pdb.set_trace()
+            eps = 1e-8
+            eigenvalue_threshold = (
+                sorted_ls[self.projection_dim - 1]
+                if self.projection_dim < len(sorted_ls)
+                else sorted_ls[-1]
+            ) - eps
+            (
+                layer_R_A_factors,
+                layer_R_S_factors,
+                layer_R_ls,
+            ) = self._retrieve_projections_fast_kfac_embedder_helper(
+                dataloader,
+                projection_on_cpu,
+                show_progress,
+                layer_block_projection_dim=None,  # is ignored because `eigenvalue_threshold` is specified
+                eigenvalue_threshold=eigenvalue_threshold,
+                return_eigenvalue_only=False,
+            )
+
+        # scale is inverse of eigenvalue
+        layer_R_scales = [[ls**-0.5 for ls in R_ls] for R_ls in layer_R_ls]
         return FastKFACEmbedderFitResults(
             layer_R_A_factors, layer_R_S_factors, layer_R_scales
         )
@@ -366,6 +491,12 @@ class FastKFACEmbedder(EmbedderBase):
                         block_layer_input,
                         block_layer_output_gradient,
                     ):
+                        # if no factors for the block, as indicated by dummy value
+                        # of `None` for them, return embedding with width of 0
+                        if block_A_factors is None:
+                            batch_size = block_layer_input.shape[0]
+                            return torch.zeros((batch_size, 0))
+
                         # for each factor, simulate dot-product with `outer(S, A)`
                         def get_batch_layer_block_coordinates(
                             block_A_factor,
@@ -464,7 +595,7 @@ class FastKFACEmbedder(EmbedderBase):
                         dim=1,
                     ).to(return_device)
 
-        logging.warning("compute embeddings")
+        logging.info("compute embeddings")
         return torch.cat([get_batch_embeddings(batch) for batch in dataloader], dim=0)
 
     def save(self, path: str):

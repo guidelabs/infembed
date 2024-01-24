@@ -302,10 +302,11 @@ class ArnoldiEmbedder(EmbedderBase):
             dataloader (DataLoader): The dataloader containing data needed to learn how
                     to compute the embeddings
         """
-        logging.warning("start arnoldi iteration")
+        logging.info("start arnoldi iteration")
         self.fit_results = self._retrieve_projections_arnoldi_embedder(
             dataloader, self.projection_on_cpu, self.show_progress
         )
+        return self
 
     def _retrieve_projections_arnoldi_embedder(
         self,
@@ -374,8 +375,8 @@ class ArnoldiEmbedder(EmbedderBase):
 
         # perform the arnoldi iteration, see its documentation for what its return
         # values are.  note that `H` is *not* the Hessian.
-        logging.warning("start `_parameter_arnoldi`")
-        qs, H = profile(_parameter_arnoldi)(
+        logging.info("start `_parameter_arnoldi`")
+        qs, H = _parameter_arnoldi(
             HVP,
             b,
             self.arnoldi_dim,
@@ -393,7 +394,7 @@ class ArnoldiEmbedder(EmbedderBase):
         # *not* the Hessian (`qs` and `H` together define the Krylov subspace of the
         # Hessian)
 
-        logging.warning("start `_parameter_distill`")
+        logging.info("start `_parameter_distill`")
         ls, vs = _parameter_distill(
             qs, H, self.projection_dim, self.hessian_reg, self.hessian_inverse_tol
         )

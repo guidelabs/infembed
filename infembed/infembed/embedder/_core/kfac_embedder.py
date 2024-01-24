@@ -22,11 +22,15 @@ from torch.nn import Module
 from torch.utils.data import DataLoader
 from dataclasses import dataclass
 import dill as pickle
+import torch.nn as nn
 
 
 @dataclass
 class KFACEmbedderFitResults:
     layer_Rs: Tensor
+
+
+SUPPORTED_LAYERS = [nn.Linear, nn.Conv2d]
 
 
 class KFACEmbedder(EmbedderBase):
@@ -63,7 +67,7 @@ class KFACEmbedder(EmbedderBase):
         loss_fn: Optional[Union[Module, Callable]] = None,
         test_loss_fn: Optional[Union[Module, Callable]] = None,
         sample_wise_grads_per_batch: bool = False,
-        projection_dim: Union[int, List[int]] = 50,
+        layer_projection_dim: Optional[int] = 50,
         seed: int = 0,
         hessian_reg: float = 1e-6,
         hessian_inverse_tol: float = 1e-5,
@@ -84,11 +88,9 @@ class KFACEmbedder(EmbedderBase):
             sample_wise_grads_per_batch (bool, optional): Whether to use an efficiency
                     trick to compute the per-example gradients.  Only works if layers we
                     consider gradients in are `Linear` or `Conv2d` layers.
-            projection_dim (int or list of int): This argument specifies the number of
-                    dimensions in the embedding that come from each layer.  This can either
-                    be a list of integers with the same number of elements as `layers`, or
-                    a single integer, in which case every layer contributes the same
-                    number of dimensions.
+            layer_projection_dim (int): This argument specifies the number of
+                    dimensions in the embedding that come from each layer. Each layer
+                    is assumed to contribute the same number of dimensions.
         """
         self.model = model
 
@@ -116,16 +118,13 @@ class KFACEmbedder(EmbedderBase):
 
         self.layer_modules = None
         if not (layers is None):
-            self.layer_modules = _set_active_parameters(model, layers)
+            self.layer_modules = _set_active_parameters(model, layers, supported_layers=SUPPORTED_LAYERS)
         else:
             self.layer_modules = list(model.modules())
 
         # below initializations are specific to `KFACEmbedder`
 
-        # expand `projection_dim` to list if not one
-        if not isinstance(projection_dim, list):
-            projection_dim = [projection_dim for _ in self.layer_modules]
-        self.projection_dims = projection_dim
+        self.layer_projection_dim = layer_projection_dim
 
         torch.manual_seed(seed)  # for reproducibility
 
@@ -161,6 +160,7 @@ class KFACEmbedder(EmbedderBase):
             self.show_progress,
             self.independent_factors,
         )
+        return self
 
     def _retrieve_projections_kfac_embedder(
         self,
@@ -173,6 +173,7 @@ class KFACEmbedder(EmbedderBase):
         For each layer, returns the basis of truncated SVD.  Explicitly form the
         Hessian in flattened (2D) form, so could directly apply SVD to it.
         """
+        logging.info("compute training data statistics")
         if independent_factors:
             layer_accumulators = [
                 _LayerHessianFlattenedIndependentAcumulator(layer)
@@ -222,12 +223,12 @@ class KFACEmbedder(EmbedderBase):
             torch.device("cpu") if projection_on_cpu else self.model_device
         )
 
-        for projection_dim, layer_hessian_flattened in zip(
-            self.projection_dims, layer_hessians_flattened
-        ):
+        logging.info("compute factors")
+        for (layer_hessian_flattened, layer) in zip(layer_hessians_flattened, self.layer_modules):
+            logging.info(f"compute factors for layer {layer}")
             ls, vs = _top_eigen(
                 layer_hessian_flattened,
-                projection_dim,
+                self.layer_projection_dim,
                 self.hessian_reg,
                 self.hessian_inverse_tol,
             )
