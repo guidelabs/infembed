@@ -10,6 +10,7 @@ class Data:
     """
     container for different data potentially useful for embedding, clustering, visualization
     """
+
     embeddings: Optional[torch.Tensor] = None
     metadata: Optional[pd.DataFrame] = None
     dataset: Optional[Dataset] = None
@@ -20,7 +21,7 @@ class Data:
             self.metadata.iloc[indices],
             Subset(self.dataset, indices),
         )
-    
+
     def __len__(self):
         if self.embeddings is not None:
             return len(self.embeddings)
@@ -28,3 +29,25 @@ class Data:
             return len(self.metadata)
         elif self.dataset is not None:
             return len(self.dataset)
+
+
+import cProfile
+import io
+import pstats
+from pstats import SortKey
+
+
+def profile(func):
+    def wrapper(*args, **kwargs):
+        pr = cProfile.Profile()
+        pr.enable()
+        retval = func(*args, **kwargs)
+        pr.disable()
+        s = io.StringIO()
+        sortby = SortKey.CUMULATIVE  # 'cumulative'
+        ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+        ps.print_stats()
+        print(s.getvalue())
+        return retval
+
+    return wrapper

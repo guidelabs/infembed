@@ -4,13 +4,18 @@ import sys
 import warnings
 from time import time
 from typing import cast, Iterable, Sized, TextIO
-
+import logging
 from infembed.embedder._utils.typing import Literal
 
 try:
-    from tqdm.auto import tqdm
+    from tqdm_loggable.auto import tqdm
+    from tqdm_loggable.tqdm_logging import tqdm_logging
+    tqdm_logging.set_level(logging.WARNING)
 except ImportError:
-    tqdm = None
+    try:
+        from tqdm.auto import tqdm
+    except ImportError:
+        tqdm = None
 
 
 class DisableErrorIOWrapper(object):

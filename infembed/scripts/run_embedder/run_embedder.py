@@ -37,7 +37,7 @@ def run_embedder(
         load_fit_results (bool, optional): Whether to call `load` instead of `fit`.
                 Default: False
     """
-    embedder = embedder_constructor(model=model)
+    embedder = embedder_constructor(model=model, layers=layers)
     if not load_fit_results:
         embedder.fit(train_dataloader)
     else:
@@ -55,7 +55,7 @@ def run(cfg: DictConfig):
     run_embedder(
         instantiate(cfg.embedder_constructor),
         instantiate(cfg.model.model),
-        cfg.model.layers,
+        OmegaConf.to_container(cfg.model.layers, resolve=True),
         instantiate(cfg.train_dataloader) if cfg.train_dataloader is not None else None,
         instantiate(cfg.test_dataloader),
         cfg.io.embeddings_path,

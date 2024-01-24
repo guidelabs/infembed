@@ -1,0 +1,10 @@
+model:
+  _target_: models._utils.common.load_model
+  model: 
+    _target_: models._utils.common.HuggingfaceWrapperModel
+    model:
+      _target_: 'transformers.AutoModelForCausalLM.from_pretrained'
+      pretrained_model_name_or_path: 'roneneldan/TinyStories-33M'
+  device: 'cuda:1'
+layers:
+  - 'model.lm_head'

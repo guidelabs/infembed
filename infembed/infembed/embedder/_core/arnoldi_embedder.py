@@ -23,6 +23,8 @@ from torch import Tensor
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 import dill as pickle
+import logging
+from infembed.utils.common import profile
 
 
 @dataclass
@@ -126,6 +128,7 @@ def _parameter_arnoldi(
         iterates = tqdm(iterates, desc="Running Arnoldi Iteration for step")
 
     for k in iterates:
+        logging.info(f"arnoldi iteration step {k}")
         v = _parameter_to(
             hvp(_parameter_to(qs[k - 1], device=computation_device)),
             device=projection_device,
@@ -135,7 +138,7 @@ def _parameter_arnoldi(
             H[i, k - 1] = _parameter_dot(qs[i], v)
             v = _parameter_add(v, _parameter_multiply(qs[i], -H[i, k - 1]))
         H[k, k - 1] = _parameter_dot(v, v) ** 0.5
-        logging.info(f"tol, {H[k, k - 1]}")
+        #logging.info(f"tol, {H[k, k - 1]}")
         if H[k, k - 1] < tol:
             break
         qs.append(_parameter_multiply(v, 1.0 / H[k, k - 1]))
@@ -299,6 +302,7 @@ class ArnoldiEmbedder(EmbedderBase):
             dataloader (DataLoader): The dataloader containing data needed to learn how
                     to compute the embeddings
         """
+        logging.warning("start arnoldi iteration")
         self.fit_results = self._retrieve_projections_arnoldi_embedder(
             dataloader, self.projection_on_cpu, self.show_progress
         )
@@ -370,7 +374,8 @@ class ArnoldiEmbedder(EmbedderBase):
 
         # perform the arnoldi iteration, see its documentation for what its return
         # values are.  note that `H` is *not* the Hessian.
-        qs, H = _parameter_arnoldi(
+        logging.warning("start `_parameter_arnoldi`")
+        qs, H = profile(_parameter_arnoldi)(
             HVP,
             b,
             self.arnoldi_dim,
@@ -388,6 +393,7 @@ class ArnoldiEmbedder(EmbedderBase):
         # *not* the Hessian (`qs` and `H` together define the Krylov subspace of the
         # Hessian)
 
+        logging.warning("start `_parameter_distill`")
         ls, vs = _parameter_distill(
             qs, H, self.projection_dim, self.hessian_reg, self.hessian_inverse_tol
         )

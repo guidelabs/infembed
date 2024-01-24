@@ -7,9 +7,11 @@ defaults:
   - _self_
 hydra:
   run:
-    dir: outputs/fast_kfac
+#    dir: outputs/fast_kfac
+    dir: outputs/imagenet_timing_experiments
 #    dir: outputs/spotcheck/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
   sweep:
-    dir: outputs/fast_kfac
+#    dir: outputs/fast_kfac
+    dir: outputs/imagenet_timing_experiments
 #    dir: outputs/spotcheck/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
 #    subdir: trial_${trial.trial}

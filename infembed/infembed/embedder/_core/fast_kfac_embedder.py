@@ -188,7 +188,7 @@ class FastKFACEmbedder(EmbedderBase):
         same as model size.  Then, for each layer, extract the two kinds of vectors.
         """
         # get A and S for each layer
-        logging.info("compute training data statistics")
+        logging.warning("compute training data statistics")
         layer_accumulators = [
             _LayerHessianFlattenedIndependentAcumulator(layer, split_two_d)
             for (layer, split_two_d) in zip(self.layer_modules, self.layer_split_two_ds)
@@ -228,10 +228,13 @@ class FastKFACEmbedder(EmbedderBase):
             torch.device("cpu") if projection_on_cpu else self.model_device
         )
 
-        logging.info("compute factors")
-        for projection_dim, layer_A, layer_S in zip(
-            self.projection_dims, layer_As, layer_Ss
+        logging.warning("compute factors")
+        for projection_dim, layer_A, layer_S, layer in zip(
+            self.projection_dims, layer_As, layer_Ss, self.layer_modules
         ):
+            logging.warning(f"compute factors for layer {layer}")
+            logging.debug(f"compute factors for layer with id f{id(layer)}")
+            
             R_A_factors = []
             R_S_factors = []
             R_scales = []
@@ -461,7 +464,7 @@ class FastKFACEmbedder(EmbedderBase):
                         dim=1,
                     ).to(return_device)
 
-        logging.info("compute embeddings")
+        logging.warning("compute embeddings")
         return torch.cat([get_batch_embeddings(batch) for batch in dataloader], dim=0)
 
     def save(self, path: str):
