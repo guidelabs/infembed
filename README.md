@@ -1,6 +1,6 @@
-# Influence Embeddings for Error Detection
+# InfEmbed
 
-![infembed Logo](./docs/logo/banner_v2.png)
+![infembed Logo](./docs/static/img/banner_v2.png)
 
 InfEmbed is an error detection library for machine learning models (classifiers and generative models) built in PyTorch. Given a test dataset, InfEmbed allows you to find the groups of samples in the test data on which your model makes mistakes (errors).  
 
@@ -40,5 +40,7 @@ Infembed implements several algorithms.
 
 Our implementation and approach is inspired by the [Captum](https://github.com/pytorch/captum), eventhough we focus on error discovery while the goal of captum is primarily explaning an already trained model.
 
+## Contributing
+We welcome contributions in the form of issues, 
 ## License
 InfEmbed is distributed under the BSD license.
