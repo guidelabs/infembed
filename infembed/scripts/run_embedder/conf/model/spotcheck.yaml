@@ -1,0 +1,7 @@
+model:
+  _target_: 'models._core.spotcheck.get_spotcheck_model'
+  checkpoint_path: '/spotcheck2/error_clustering/experiments/Supplement/Code/Synthetic/Outputs/complex-${trial.trial}/initial-tune/trial0/model.pt'
+  device: ${train_dataloader.device}
+layers:
+  - 'fc'
+  - 'layer4.1.conv2'
