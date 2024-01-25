@@ -1,4 +1,4 @@
-# InfEmbed
+# <span style="color:red"> ♾️  InfEmbed </span>
 
 ![infembed Logo](./docs/static/img/banner_v2.png)
 
