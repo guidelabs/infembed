@@ -27,6 +27,32 @@ class GradientEmbedder(EmbedderBase):
         sample_wise_grads_per_batch: bool = False,
         show_progress: bool = False,
     ):
+        """
+        Args:
+            model (Module): The model used to compute the embeddings.
+            layers (list of str, optional): names of modules in which to consider
+                    gradients.  If `None` or not provided, all modules will be used.
+                    Default: None
+            loss_fn (Module or Callable, optional): The loss function used to compute the
+                    Hessian.  It should behave like a "reduction" loss function, where
+                    reduction is either 'sum', 'mean', or 'none', and have a
+                    `reduction` attribute.  For example, `BCELoss(reduction='sum')`
+                    could be a valid loss function.  See the caveat under the
+                    description for the `sample_wise_grads_per_batch` argument.  If None,
+                    the loss is the output of `model`, which is assumed to be a single
+                    scalar for a batch.
+                    Default: None
+            sample_wise_grads_per_batch (bool, optional): Whether to use an efficiency
+                    trick to compute the per-example gradients.  If True, `loss_fn` must
+                    behave like a `reduction='sum'` or `reduction='sum'` loss function,
+                    i.e. `BCELoss(reduction='sum')` or `BCELoss(reduction='mean')`.  If
+                    False, `loss_fn` must behave like a `reduction='none'` loss
+                    function, i.e. `BCELoss(reduction='none')`.
+                    Default: True
+            show_progress (bool, optional): Whether to show the progress of
+                    computations in both the `fit` and `predict` methods.
+                    Default: False
+        """
         self.model = model
 
         self.loss_fn = loss_fn
