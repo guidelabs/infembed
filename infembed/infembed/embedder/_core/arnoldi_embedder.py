@@ -224,6 +224,19 @@ def _parameter_distill(
 
 
 class ArnoldiEmbedder(EmbedderBase):
+    """
+    Computes embeddings which are "influence embeddings" - vectors such that the
+    dot-product of two examples' embeddings is the "influence" of one example on the
+    other, where the general notion of influence is as defined in Koh and Liang
+    (https://arxiv.org/abs/1703.04730).  See the paper by Wang and Adebayo et al
+    (https://arxiv.org/abs/2312.04712) for more background on influence embeddings.
+
+    Influence embeddings are dependent on the exact definition and implementation of
+    influence that is used.  This implementation is based on an implementation of
+    influence (see Schioppa et al, https://arxiv.org/abs/2112.03052) that uses the
+    Arnoldi iteration to approximate the Hessian without explicitly forming the actual
+    Hessian.
+    """
     def __init__(
         self,
         model: Module,
@@ -240,6 +253,83 @@ class ArnoldiEmbedder(EmbedderBase):
         projection_on_cpu: bool = True,
         show_progress: bool = False,
     ):
+        """
+        Args:
+            model (Module): The model used to compute the embeddings.
+            layers (list of str, optional): names of modules in which to consider
+                    gradients.  If `None` or not provided, all modules will be used.
+                    There is a caveat: `KFACEmbedder` can only consider gradients
+                    in layers which are `Linear` or `Conv2d`.  Thus regardless of
+                    the modules specified by `layers`, only layers in them which are
+                    of those types will be used for calculating gradients.  The modules
+                    should not be nested, i.e. if one module is specified, do not
+                    also specify its submodules.
+                    Default: `None`
+            loss_fn (Module or Callable, optional): The loss function used to compute the
+                    Hessian.  It should behave like a "reduction" loss function, where
+                    reduction is either 'sum', 'mean', or 'none', and have a
+                    `reduction` attribute.  For example, `BCELoss(reduction='sum')`
+                    could be a valid loss function.  See the caveat under the
+                    description for the `sample_wise_grads_per_batch` argument.  If None,
+                    the loss is the output of `model`, which is assumed to be a single
+                    scalar for a batch.
+                    Default: None
+            test_loss_fn: (Module or callable, optional): The loss function used to compute
+                    the 'influence explanations'.  This argument should not matter for
+                    most use cases.  If None, is assumed to be the same as `loss_fn`.
+            sample_wise_grads_per_batch (bool, optional): Whether to use an efficiency
+                    trick to compute the per-example gradients.  If True, `loss_fn` must
+                    behave like a `reduction='sum'` or `reduction='sum'` loss function,
+                    i.e. `BCELoss(reduction='sum')` or `BCELoss(reduction='mean')`.  If
+                    False, `loss_fn` must behave like a `reduction='none'` loss
+                    function, i.e. `BCELoss(reduction='none')`.
+                    Default: True
+            projection_dim (int, optional): This implementation produces a low-rank
+                    approximation of the (inverse) Hessian. This is the rank of that
+                    approximation, and also corresponds to the dimension of the
+                    embeddings that are computed.
+                    Default: 50
+            seed (int, optional): Random seed for reproducibility.
+                    Default: 0
+            arnoldi_dim (int, optional): Calculating the low-rank approximation of the
+                    (inverse) Hessian requires approximating the Hessian's top
+                    eigenvectors / eigenvalues. This is done by first computing a
+                    Krylov subspace via the Arnoldi iteration, and then finding the top
+                    eigenvectors / eigenvalues of the restriction of the Hessian to the
+                    Krylov subspace. Because only the top eigenvectors / eigenvalues
+                    computed in the restriction will be similar to those in the full
+                    space, `arnoldi_dim` should be chosen to be larger than
+                    `projection_dim`. In the paper, they often choose `projection_dim`
+                    to be between 10 and 100, and `arnoldi_dim` to be 200. Please see
+                    the paper as well as Trefethen and Bau, Chapters 33-34 for more
+                    details on the Arnoldi iteration.
+                    Default: 200
+            arnoldi_tol (float, optional): After many iterations, the already-obtained
+                    basis vectors may already approximately span the Krylov subspace,
+                    in which case the addition of additional basis vectors involves
+                    normalizing a vector with a small norm. These vectors are not
+                    necessary to include in the basis and furthermore, their small norm
+                    leads to numerical issues. Therefore we stop the Arnoldi iteration
+                    when the addition of additional vectors involves normalizing a
+                    vector with norm below a certain threshold. This argument specifies
+                    that threshold.
+                    Default: 1e-4
+            hessian_reg (float, optional): This implementation computes the eigenvalues /
+                    eigenvectors of Hessians.  We add an entry to the Hessian's
+                    diagonal entries before computing them.  This is that entry.
+                    Default: 1e-6
+            hessian_inverse_tol (float): This implementation computes the
+                    pseudo-inverse of the (square root of) Hessians.  This is the
+                    tolerance to use in that computation.
+                    Default: 1e-6
+            projection_on_cpu (bool, optional): Whether to move the projection,
+                    i.e. low-rank approximation of the inverse Hessian, to cpu, to save
+                    gpu memory.
+                    Default: True
+            show_progress (bool, optional): Whether to show the progress of
+                    computations in both the `fit` and `predict` methods.
+                    Default: False
+        """
         self.model = model
 
         self.loss_fn = loss_fn
@@ -294,7 +384,7 @@ class ArnoldiEmbedder(EmbedderBase):
         dataloader: DataLoader,
     ):
         r"""
-        Does the computation needed for computing influence embeddings, which is
+        Does the computation needed for computing embeddings, which is
         finding the top eigenvectors / eigenvalues of the Hessian, computed
         using `dataloader`.
 
@@ -331,7 +421,7 @@ class ArnoldiEmbedder(EmbedderBase):
         projections to gpu when multiplying would defeat the purpose of moving them to
         cpu to save gpu memory).
 
-        Returns:
+        Returns a `dataclass` with the following attributes:
             R (list of tuple of tensors): List of tuple of tensors of length
                     `projection_dim` (initialization argument). Each element
                     corresponds to a parameter in parameter-space, is represented as a

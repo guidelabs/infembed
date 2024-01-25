@@ -37,6 +37,7 @@ def apply_gradient_requirements(
                 )
         elif not input.requires_grad:
             if warn:
+                # TODO: figure out why get this warning
                 warnings.warn(
                     "Input Tensor %d did not already require gradients, "
                     "required_grads has been set automatically." % index
@@ -91,7 +92,7 @@ def _compute_jacobian_wrt_params_with_sample_wise_trick(
     """
     with torch.autograd.set_grad_enabled(True):
         inputs = tuple(inp.clone() for inp in inputs)
-        apply_gradient_requirements(inputs)
+        apply_gradient_requirements(inputs, warn=False)
         sample_grad_wrapper = SampleGradientWrapper(model, layer_modules)
         try:
             sample_grad_wrapper.add_hooks()

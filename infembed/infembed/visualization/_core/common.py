@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import List
 import pandas as pd
 from infembed.utils.common import Data
 
@@ -54,7 +54,7 @@ class DisplayAccuracy(SingleClusterDisplayer):
     def __call__(
         self,
         cluster: List[int],
-        data,
+        data: Data,
     ):
         assert isinstance(data.metadata, pd.DataFrame)
         corrects = data.metadata.iloc[cluster][self.prediction_col] == data.metadata.iloc[cluster][self.label_col]
@@ -62,14 +62,16 @@ class DisplayAccuracy(SingleClusterDisplayer):
 
 
 class DisplayPredictionAndLabels(SingleClusterDisplayer):
-    def __init__(self, figsize=None, threshold=-1, num=10, prediction_col='prediction_label', label_col='label'):
+    def __init__(self, prediction_col='prediction_label', label_col='label'):
         self.prediction_col, self.label_col = prediction_col, label_col
 
     def __call__(
         self,
-        clusters: List[List[int]],
+        cluster: List[int],
         data: Data,
     ):
-        assert metadata is not None
-        prediction_counts = metadata[self.prediction_col].value_counts()
-        label_counts = metadata[self.label_col].value_counts()
+        assert data.metadata is not None
+        prediction_counts = data.metadata.iloc[cluster][self.prediction_col].value_counts()
+        label_counts = data.metadata.iloc[cluster][self.label_col].value_counts()
+        print(f"prediction: {dict(prediction_counts)}")
+        print(f"label: {dict(label_counts)}")

@@ -1,0 +1,116 @@
+from typing import Callable, List, Optional, Union
+from infembed.embedder._core.embedder_base import EmbedderBase
+from infembed.embedder._utils.common import (
+    _check_loss_fn,
+    _compute_jacobian_sample_wise_grads_per_batch,
+    _flatten_sample_wise_grads,
+    _progress_bar_constructor,
+    _set_active_parameters,
+)
+from torch.nn import Module
+from torch.utils.data import DataLoader
+from torch import Tensor
+import torch
+import logging
+
+
+class GradientEmbedder(EmbedderBase):
+    r"""
+    Computes per-example loss gradients as the embeddings.
+    """
+
+    def __init__(
+        self,
+        model: Module,
+        layers: Optional[List[str]] = None,
+        loss_fn: Optional[Union[Module, Callable]] = None,
+        sample_wise_grads_per_batch: bool = False,
+        show_progress: bool = False,
+    ):
+        self.model = model
+
+        self.loss_fn = loss_fn
+        self.sample_wise_grads_per_batch = sample_wise_grads_per_batch
+
+        # check `loss_fn`
+        self.reduction_type = _check_loss_fn(
+            loss_fn, "loss_fn", sample_wise_grads_per_batch
+        )
+
+        self.layer_modules = None
+        if not (layers is None):
+            self.layer_modules = _set_active_parameters(model, layers)
+        else:
+            self.layer_modules = list(model.modules())
+
+        self.show_progress = show_progress
+
+    def fit(self, dataloader: DataLoader):
+        r"""
+        Does the computation needed for computing embeddings, which is
+        finding the top eigenvectors / eigenvalues of the Hessian, computed
+        using `dataloader`.  For this implementation, no such computation is needed.
+
+        Args:
+            dataloader (DataLoader): The dataloader containing data needed to learn how
+                    to compute the embeddings
+        """
+        pass
+
+    def predict(self, dataloader: DataLoader) -> Tensor:
+        """
+        Returns the embeddings for `dataloader`.
+
+        Args:
+            dataloader (`DataLoader`): dataloader whose examples to compute embeddings
+                    for.
+        """
+        if self.show_progress:
+            dataloader = _progress_bar_constructor(
+                self, dataloader, "embeddings", "test data"
+            )
+
+        return_device = torch.device("cpu")
+
+        # define a helper function that returns the embeddings for a batch
+        def get_batch_embeddings(batch):
+            features, labels = tuple(batch[0:-1]), batch[-1]
+
+            # get jacobians (and corresponding name of parameters?)
+            jacobians = _compute_jacobian_sample_wise_grads_per_batch(
+                self, features, labels, self.loss_fn, self.reduction_type
+            )
+            with torch.no_grad():
+                return _flatten_sample_wise_grads(jacobians).to(device=return_device)
+            
+        if self.show_progress:
+            logging.info("compute embeddings") 
+        return torch.cat([get_batch_embeddings(batch) for batch in dataloader], dim=0)
+    
+    def save(self, path: str):
+        """
+        This method saves the results of `fit` to a file.  Note that this
+        implementation does not compute any results in `fit`, so this method does not
+        save anything.
+
+        Args:
+            path (str): path of file to save results in.
+        """
+        pass
+
+    def load(self, path: str):
+        """
+        Loads the results saved by the `save` method.  Instead of calling `fit`, one
+        can instead call `load`.  Note that this implementation does not save any
+        results in `save`, so this method does not load anything.
+
+        Args:
+            path (str): path of file to load results from.
+        """
+        pass
+
+    def reset(self):
+        """
+        Removes the effect of calling `fit` or `load`
+        """
+        pass

@@ -14,7 +14,7 @@ class LimitIterableDataset(IterableDataset):
         self.dataset, self.num = dataset, num
 
     def __iter__(self):
-        for (i, batch)in enumerate(self.dataset):
+        for i, batch in enumerate(self.dataset):
             if self.num is not None and i >= self.num:
                 return
             yield batch

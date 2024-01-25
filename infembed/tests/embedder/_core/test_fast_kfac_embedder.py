@@ -9,9 +9,10 @@ from .._utils.common import (
     get_random_model_and_data,
 )
 from parameterized import parameterized
-from ...utils.common import build_test_name_func
+from ...utils.common import assertTensorAlmostEqual, build_test_name_func
 from torch.utils.data import DataLoader
 import torch.nn as nn
+import torch
 
 
 class TestFastKFACEmbedder(TestCase):
@@ -100,7 +101,7 @@ class TestFastKFACEmbedder(TestCase):
         ],
         name_func=build_test_name_func(),
     )
-    def _test_compare_implementations_KFAC_vs_FastKFAC(
+    def test_compare_implementations_KFAC_vs_FastKFAC(
         self,
         embedder_constructor_1: Callable,
         embedder_constructor_2: Callable,
@@ -135,24 +136,25 @@ class TestFastKFACEmbedder(TestCase):
             for (
                 embedder_constructor,
                 model_type,
+                projection_dim,
             ) in [
                 (
                     EmbedderConstructor(
                         FastKFACEmbedder,
                         layers=["linear"],
                         hessian_inverse_tol=0.0,
-                        projection_dim=50,
                     ),
                     "one_layer_linear",
+                    5,  # this model only has 5 parameters, so this is edge case
                 ),
                 (
                     EmbedderConstructor(
                         FastKFACEmbedder,
                         layers=["linear1", "linear2"],
                         hessian_inverse_tol=0.0,
-                        projection_dim=50,
                     ),
                     "seq",
+                    15,
                 ),
                 (
                     EmbedderConstructor(
@@ -160,17 +162,12 @@ class TestFastKFACEmbedder(TestCase):
                         layers=["linear1", "conv"],
                         # layers=["linear1"],
                         # hessian_inverse_tol=0.0,
-                        hessian_inverse_tol=-1e-2,
+                        hessian_inverse_tol=0.0,
                         hessian_reg=1e-8,
-                        projection_dim=50,
                     ),
                     "conv",
+                    15,
                 ),
-            ]
-            for projection_dim in [
-                5,
-                10,
-                15,
             ]
         ],
         name_func=build_test_name_func(),
@@ -183,7 +180,9 @@ class TestFastKFACEmbedder(TestCase):
     ):
         """
         tests that when `projection_dim` is specified for `FastKFACEmbedder`, the
-        projections are of the specified dimension
+        projections are of the specified dimension.  set `hessian_inverse_tol` to 0 so
+        that don't lose any dimensions because eigenvalues are too close to 0.  since
+        using KFAC, all eigenvalues should be positive.
         """
         (
             net,
@@ -207,11 +206,4 @@ class TestFastKFACEmbedder(TestCase):
         )
 
         embeddings = embedder.fit(train_dataloader).predict(train_dataloader)
-        print(embeddings.shape, projection_dim)
-        #assert embeddings.shape[1] == projection_dim
-        # try:
-        #     assert embeddings.shape[1] == projection_dim
-        # except:
-        #     import pdb
-        #     print(embeddings.shape, projection_dim)
-        #     pdb.set_trace()
+        assert embeddings.shape[1] == projection_dim

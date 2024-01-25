@@ -29,13 +29,14 @@ class HuggingfaceWrapperModel(nn.Module):
     forward.  this wraps huggingface models to accept batches of that format.  it just
     duplicates the dictionary representing the huggingface input.
     """
+
     def __init__(self, model):
         super().__init__()
         self.model = model
 
     def forward(self, features):
         return self.model(**features)
-    
+
 
 class HuggingfaceLoss(nn.Module):
     def __call__(self, output, target):

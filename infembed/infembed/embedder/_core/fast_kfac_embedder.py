@@ -1,5 +1,5 @@
 from infembed.embedder._core.embedder_base import EmbedderBase
-from typing import Any, Optional, Tuple, Union, List, Callable
+from typing import Any, Optional, Union, List, Callable
 from infembed.embedder._utils.common import (
     _check_loss_fn,
     _format_inputs_dataset,
@@ -42,16 +42,19 @@ SUPPORTED_LAYERS = [nn.Linear, nn.Conv2d]
 
 class FastKFACEmbedder(EmbedderBase):
     """
-    Computes influence embeddings using the KFAC approximation to the Hessian, which
-    makes the following approximations: 1) it computes the Gauss-Newton Hessian
-    (GNH), which is always guaranteed to be PSD, instead of the Hessian.  2) The GNH
-    is assumed to be block-diagonal, where the blocks correspond to parameters from
-    different layers.
+    Computes embeddings which are "influence embeddings" - vectors such that the
+    dot-product of two examples' embeddings is the "influence" of one example on the
+    other, where the general notion of influence is as defined in Koh and Liang
+    (https://arxiv.org/abs/1703.04730).  See the paper by Wang and Adebayo et al
+    (https://arxiv.org/abs/2312.04712) for more background on influence embeddings.
 
-    KFAC can potentially use an additional approximation: when computing the GNH for
-    a given layer, assume the input activations and pseudo-gradients are independent.
-    This implementations allows to specify whether to use this independence assumption
-    regarding those factors.
+    Influence embeddings are dependent on the exact definition and implementation of
+    influence that is used.  This implementation is based on an implementation of
+    influence (see Grosse and Bae et al, https://arxiv.org/abs/2308.03296) that uses
+    a KFAC approximation to the Hessian, which makes the following approximations:
+    1) it computes the Gauss-Newton Hessian (GNH), which is always guaranteed to be
+    PSD, instead of the Hessian.  2) The GNH is assumed to be block-diagonal, where
+    the blocks correspond to parameters from different layers.
 
     This implementation is "fast" in that it never instantiates the Hessian, and
     furthermore, optionally constructions a block diagonal approximation of the Hessian
@@ -65,6 +68,7 @@ class FastKFACEmbedder(EmbedderBase):
         loss_fn: Optional[Union[Module, Callable]] = None,
         test_loss_fn: Optional[Union[Module, Callable]] = None,
         sample_wise_grads_per_batch: bool = False,
+        projection_dim: Optional[int] = 50,
         layer_block_projection_dim: Optional[int] = None,
         seed: int = 0,
         hessian_reg: float = 1e-6,
@@ -72,34 +76,70 @@ class FastKFACEmbedder(EmbedderBase):
         projection_on_cpu: bool = True,
         show_progress: bool = False,
         per_layer_blocks: int = 1,
-        projection_dim: Optional[int] = 50,
     ):
         """
         Args:
             model (Module): The model used to compute the embeddings.
             layers (list of str, optional): names of modules in which to consider
                     gradients.  If `None` or not provided, all modules will be used.
-                    Default: `None`
+                    There is a caveat: `FastKFACEmbedder` can only consider gradients
+                    in layers which are `Linear` or `Conv2d`.  Thus regardless of
+                    the modules specified by `layers`, only layers in them which are
+                    of those types will be used for calculating gradients.
+                    Default: None
             loss_fn (Module or Callable, optional): The loss function used to compute the
-                    Hessian.  TODO: specify what are valid losses
+                    Hessian.  It should behave like a "reduction" loss function, where
+                    reduction is either 'sum', 'mean', or 'none', and have a
+                    `reduction` attribute.  For example, `BCELoss(reduction='sum')`
+                    could be a valid loss function.  See the caveat under the
+                    description for the `sample_wise_grads_per_batch` argument.  If None,
+                    the loss is the output of `model`, which is assumed to be a single
+                    scalar for a batch.
+                    Default: None
             test_loss_fn: (Module or callable, optional): The loss function used to compute
-                    the 'influence explanations'
+                    the 'influence explanations'.  This argument should not matter for
+                    most use cases.  If None, is assumed to be the same as `loss_fn`.
             sample_wise_grads_per_batch (bool, optional): Whether to use an efficiency
-                    trick to compute the per-example gradients.  Only works if layers we
-                    consider gradients in are `Linear` or `Conv2d` layers.
-            layer_block_projection_dim (int): Determines the dimension of the embedding
-                    by specifying the number of dimensions in the embedding that come
-                    from each block in each layer. Each block in each layer is assumed
-                    to contribute the same number of dimensions.  Either this or the
-                    `projection_dim` argument should be specified, but not both, as
-                    both arguments serve the same purpose: determining the dimension
-                    of the embedding.
-            per_layer_blocks (int): The number of blocks in the block diagonal
+                    trick to compute the per-example gradients.  If True, `loss_fn` must
+                    behave like a `reduction='sum'` or `reduction='sum'` loss function,
+                    i.e. `BCELoss(reduction='sum')` or `BCELoss(reduction='mean')`.  If
+                    False, `loss_fn` must behave like a `reduction='none'` loss
+                    function, i.e. `BCELoss(reduction='none')`.
+                    Default: True
+            projection_dim (int, optional): Directly determines the embedding's
+                    dimension, if not None.  If None and `layer_block_projection_dim`
+                    is not None, the latter specifies the embedding dimension.  If both
+                    arguments are None, all parameters in layers specified by `layers`
+                    contribute to the embedding, i.e. there is no dimension reduction
+                    done, so that the embedding dimension is the number of parameters
+                    whose gradients considered.
+                    Default: 50
+            layer_block_projection_dim (int, optional): This argument is only used if
+                    `projection_dim` is None, and specifies the number of
+                    dimensions in the embedding that come from each block in each
+                    layer. Each block is assumed to contribute the same number of dimensions.
+                    Default: None
+            seed (int, optional): Random seed for reproducibility.
+                    Default: 0
+            hessian_reg (float, optional): This implementation computes the eigenvalues /
+                    eigenvectors of Hessians.  We add an entry to the Hessian's
+                    diagonal entries before computing them.  This is that entry.
+                    Default: 1e-6
+            hessian_inverse_tol (float): This implementation computes the
+                    pseudo-inverse of the (square root of) Hessians.  This is the
+                    tolerance to use in that computation.
+                    Default: 1e-6
+            projection_on_cpu (bool, optional): Whether to move the projection,
+                    i.e. low-rank approximation of the inverse Hessian, to cpu, to save
+                    gpu memory.
+                    Default: True
+            show_progress (bool, optional): Whether to show the progress of
+                    computations in both the `fit` and `predict` methods.
+                    Default: False
+            per_layer_blocks (int, optional): The number of blocks in the block diagonal
                     approximation of the Hessian within a single layer.
-            projection_dim (int): Directly determines the dimension of the embedding.
-                    Either this or the `layer_block_projection_dim` argument should be
-                    specified, but not both, as both arguments serve the same purpose:
-                    determining the dimension of the embedding.
+                    Default: 1
+
         """
         self.model = model
 
@@ -138,10 +178,6 @@ class FastKFACEmbedder(EmbedderBase):
             ]
 
         # below initializations are specific to `KFACEmbedder`
-        # only one of the below 2 arguments should be specified
-        # assert (
-        #     int(layer_block_projection_dim is None) + int(projection_dim is None) == 1
-        # ), "only one of `layer_block_projection_dim` or `projection_dim` should be specified"
         self.layer_block_projection_dim = layer_block_projection_dim
         self.projection_dim = projection_dim
 
@@ -172,7 +208,7 @@ class FastKFACEmbedder(EmbedderBase):
         dataloader: DataLoader,
     ):
         r"""
-        Does the computation needed for computing influence embeddings, which is
+        Does the computation needed for computing embeddings, which is
         finding the top eigenvectors / eigenvalues of the Hessian, computed
         using `dataloader`.
 
@@ -203,12 +239,6 @@ class FastKFACEmbedder(EmbedderBase):
         `layer_block_projection_dim`, 3) extract eigenvectors / eigenvalues for which
         the eigenvalue is above `eigenvalue_threshold`.
         """
-        # # only one of the below 2 arguments should be specified
-        # assert (
-        #     int(layer_block_projection_dim is None) + int(eigenvalue_threshold is None)
-        #     == 1
-        # )
-
         # get A and S for each layer
         logging.info("compute training data statistics")
         layer_accumulators = [
@@ -251,7 +281,7 @@ class FastKFACEmbedder(EmbedderBase):
             torch.device("cpu") if projection_on_cpu else self.model_device
         )
 
-        logging.info("compute factors")
+        # logging.info("compute factors")
         for k, (layer_A, layer_S, layer) in enumerate(
             zip(layer_As, layer_Ss, self.layer_modules)
         ):
@@ -288,14 +318,15 @@ class FastKFACEmbedder(EmbedderBase):
                     flattened_indices_to_keep = torch.argsort(
                         ls.view(-1), descending=True
                     )[:layer_block_projection_dim]
-                    assert layer_block_projection_dim is None
+                    # assert layer_block_projection_dim is None
                 else:
                     # if keeping based on `eigenvalue_threshold`
                     # TODO: can sort so that largest eigenvalue is first
+                    eps = 1e-4
                     flattened_indices_to_keep = [
                         idx
                         for (idx, l) in enumerate(ls.view(-1))
-                        if l > eigenvalue_threshold
+                        if l > (eigenvalue_threshold + eps)
                     ]
 
                 top_ijs = [
@@ -358,9 +389,11 @@ class FastKFACEmbedder(EmbedderBase):
 
         A helper function is used to return embeddings of the desired dimension.
         """
-        if self.layer_block_projection_dim is not None or self.projection_dim is None:
-            # if specified `layer_block_projection_dim`, directly compute
-            # eigenvectors / eigenvectors
+        if (self.layer_block_projection_dim is not None) or (
+            self.projection_dim is None and self.layer_block_projection_dim is None
+        ):
+            # if specified `layer_block_projection_dim`, or using all parameters,
+            # directly compute eigenvectors / eigenvectors
             (
                 layer_R_A_factors,
                 layer_R_S_factors,
@@ -376,6 +409,7 @@ class FastKFACEmbedder(EmbedderBase):
         else:
             assert self.projection_dim is not None
             # first get all eigenvalues to get eigenvalue threshold
+            logging.info("compute factors, first pass to get eigenvalue threshold")
             _, _, layer_R_ls = self._retrieve_projections_fast_kfac_embedder_helper(
                 dataloader,
                 projection_on_cpu,
@@ -387,14 +421,13 @@ class FastKFACEmbedder(EmbedderBase):
             # figure out eigenvalue threshold
             all_ls = torch.Tensor([l for R_ls in layer_R_ls for ls in R_ls for l in ls])
             sorted_ls = torch.sort(all_ls, descending=True).values
-            # import pdb
-            # pdb.set_trace()
-            eps = 1e-8
             eigenvalue_threshold = (
-                sorted_ls[self.projection_dim - 1]
-                if self.projection_dim < len(sorted_ls)
-                else sorted_ls[-1]
-            ) - eps
+                sorted_ls[self.projection_dim]
+                if len(sorted_ls) >= self.projection_dim + 1
+                else None
+            )
+
+            logging.info("compute factors, second pass to get eigenvalue threshold")
             (
                 layer_R_A_factors,
                 layer_R_S_factors,
@@ -456,7 +489,7 @@ class FastKFACEmbedder(EmbedderBase):
                 )
             )
             layer_inputs = [
-                accumulator.layer_inputs[0]
+                accumulator.layer_inputs[0]  # because only capture a single batch
                 for accumulator in layer_capture_accumulators
             ]
             layer_output_gradients = [

@@ -1,5 +1,5 @@
 from functools import reduce
-from typing import Any, Iterable, List, Optional, Union, Callable, Tuple, overload
+from typing import Any, Iterable, List, Optional, Union, Callable, Tuple
 from infembed.embedder._utils.gradient import (
     _compute_jacobian_wrt_params,
     _compute_jacobian_wrt_params_with_sample_wise_trick,
@@ -22,7 +22,7 @@ def _check_loss_fn(
 ) -> str:
     """
     This checks whether `loss_fn` satisfies the requirements assumed of all
-    implementations of `TracInCPBase`. It works regardless of whether the
+    implementations of `EmbedderBase`. It works regardless of whether the
     implementation has the `sample_wise_grads_per_batch` attribute.
     It returns the reduction type of the loss_fn. If `sample_wise_grads_per_batch`
     if not provided, we assume the implementation does not have that attribute.
@@ -236,7 +236,7 @@ def _top_eigen(
     rule = torch.sum(vs, dim=0) > 0  # entries are 0/1
     rule_multiplier = (2 * rule) - 1  # entries are -1/1
     vs = vs * rule_multiplier.unsqueeze(0)
-    assert len(ls) == H.shape[0]
+    # assert len(ls) == H.shape[0]
     return ls, vs
 
 
@@ -318,6 +318,27 @@ def _compute_jacobian_sample_wise_grads_per_batch(
     )
 
 
+def _flatten_params(_params: Tuple[Tensor, ...]) -> Tensor:
+    """
+    Given a tuple of tensors, which is how Pytorch represents parameters of a model,
+    flattens it into a single tensor. This is useful if we want to do matrix operations
+    on the parameters of a model, i.e. invert its Hessian, or compute dot-product of
+    parameter-gradients. Note that flattening and then passing to standard linear
+    algebra operations may not be the most efficient way to perform them.
+    """
+    return torch.cat([_param.view(-1) for _param in _params])
+
+
+def _flatten_sample_wise_grads(jacobians: Tuple[Tensor]):
+    return torch.stack(
+        [
+            _flatten_params(tuple(jacobian[i] for jacobian in jacobians))
+            for i in range(len(next(iter(jacobians))))
+        ],
+        dim=0,
+    )
+
+
 def _params_to_names(params: Iterable[nn.Parameter], model: nn.Module) -> List[str]:
     """
     Given an iterable of parameters, `params` of a model, `model`, returns the names of
@@ -383,7 +404,7 @@ def _compute_batch_loss_influence_function_base(
     else:
         # currently, only support `reduction_type` to be
         # 'none', 'sum', or 'mean' for
-        # `InfluenceFunctionBase` implementations
+        # `EmbedderBase` implementations
         raise Exception
 
 

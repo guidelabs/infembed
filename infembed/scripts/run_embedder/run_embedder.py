@@ -17,11 +17,12 @@ def run_embedder(
     test_dataloader: DataLoader,
     embeddings_path: str = "embeddings.pt",
     fit_results_path: Optional[str] = None,
-    load_fit_results: bool = False
+    load_fit_results: bool = False,
+    wrapper_embedder_constructor: Optional[Callable] = None,
 ):
     """
     Args:
-        embedder_constructor (Callable): Function that given `model`, returns the 
+        embedder_constructor (Callable): Function that given `model`, returns the
                 `EmbedderBase` instance.
         model (Module): Model to provide to `embedder_constructor`.  It should already
                 be on the correct device.
@@ -36,8 +37,12 @@ def run_embedder(
                 load.
         load_fit_results (bool, optional): Whether to call `load` instead of `fit`.
                 Default: False
+        wrapper_embedder_constructor (Callable, optional): Constructor whose arguments
+                are just the embedder constructed from `embedder_constructor`.
     """
     embedder = embedder_constructor(model=model, layers=layers)
+    if wrapper_embedder_constructor is not None:
+        embedder = wrapper_embedder_constructor(base_embedder=embedder)
     if not load_fit_results:
         embedder.fit(train_dataloader)
     else:
@@ -61,6 +66,9 @@ def run(cfg: DictConfig):
         cfg.io.embeddings_path,
         cfg.io.fit_results_path,
         cfg.io.load_fit_results,
+        instantiate(cfg.wrapper_embedder_constructor)
+        if "wrapper_embedder_constructor" in cfg
+        else None,
     )
 
 

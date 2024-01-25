@@ -1,6 +1,6 @@
 import logging
 from infembed.embedder._core.embedder_base import EmbedderBase
-from typing import Any, Optional, Tuple, Union, List, Callable
+from typing import Optional, Union, List, Callable
 from infembed.embedder._utils.common import (
     NotFitException,
     _check_loss_fn,
@@ -35,11 +35,19 @@ SUPPORTED_LAYERS = [nn.Linear, nn.Conv2d]
 
 class KFACEmbedder(EmbedderBase):
     """
-    Computes influence embeddings using the KFAC approximation to the Hessian, which
-    makes the following approximations: 1) it computes the Gauss-Newton Hessian
-    (GNH), which is always guaranteed to be PSD, instead of the Hessian.  2) The GNH
-    is assumed to be block-diagonal, where the blocks correspond to parameters from
-    different layers.
+    Computes embeddings which are "influence embeddings" - vectors such that the
+    dot-product of two examples' embeddings is the "influence" of one example on the
+    other, where the general notion of influence is as defined in Koh and Liang
+    (https://arxiv.org/abs/1703.04730).  See the paper by Wang and Adebayo et al
+    (https://arxiv.org/abs/2312.04712) for more background on influence embeddings.
+
+    Influence embeddings are dependent on the exact definition and implementation of
+    influence that is used.  This implementation is based on an implementation of
+    influence (see Grosse and Bae et al, https://arxiv.org/abs/2308.03296) that uses
+    a KFAC approximation to the Hessian, which makes the following approximations:
+    1) it computes the Gauss-Newton Hessian (GNH), which is always guaranteed to be
+    PSD, instead of the Hessian.  2) The GNH is assumed to be block-diagonal, where the
+    blocks correspond to parameters from different layers.
 
     KFAC can potentially use an additional approximation: when computing the GNH for
     a given layer, assume the input activations and pseudo-gradients are independent.
@@ -80,17 +88,55 @@ class KFACEmbedder(EmbedderBase):
             model (Module): The model used to compute the embeddings.
             layers (list of str, optional): names of modules in which to consider
                     gradients.  If `None` or not provided, all modules will be used.
-                    Default: `None`
+                    There is a caveat: `KFACEmbedder` can only consider gradients
+                    in layers which are `Linear` or `Conv2d`.  Thus regardless of
+                    the modules specified by `layers`, only layers in them which are
+                    of those types will be used for calculating gradients.
+                    Default: None
             loss_fn (Module or Callable, optional): The loss function used to compute the
-                    Hessian.  TODO: specify what are valid losses
+                    Hessian.  It should behave like a "reduction" loss function, where
+                    reduction is either 'sum', 'mean', or 'none', and have a
+                    `reduction` attribute.  For example, `BCELoss(reduction='sum')`
+                    could be a valid loss function.  See the caveat under the
+                    description for the `sample_wise_grads_per_batch` argument.  If None,
+                    the loss is the output of `model`, which is assumed to be a single
+                    scalar for a batch.
+                    Default: None
             test_loss_fn: (Module or callable, optional): The loss function used to compute
-                    the 'influence explanations'
+                    the 'influence explanations'.  This argument should not matter for
+                    most use cases.  If None, is assumed to be the same as `loss_fn`.
             sample_wise_grads_per_batch (bool, optional): Whether to use an efficiency
-                    trick to compute the per-example gradients.  Only works if layers we
-                    consider gradients in are `Linear` or `Conv2d` layers.
-            layer_projection_dim (int): This argument specifies the number of
+                    trick to compute the per-example gradients.  If True, `loss_fn` must
+                    behave like a `reduction='sum'` or `reduction='sum'` loss function,
+                    i.e. `BCELoss(reduction='sum')` or `BCELoss(reduction='mean')`.  If
+                    False, `loss_fn` must behave like a `reduction='none'` loss
+                    function, i.e. `BCELoss(reduction='none')`.
+                    Default: True
+            layer_projection_dim (int, optional): This argument specifies the number of
                     dimensions in the embedding that come from each layer. Each layer
                     is assumed to contribute the same number of dimensions.
+                    Default: 50
+            seed (int, optional): Random seed for reproducibility.
+                    Default: 0
+            hessian_reg (float, optional): This implementation computes the eigenvalues /
+                    eigenvectors of Hessians.  We add an entry to the Hessian's
+                    diagonal entries before computing them.  This is that entry.
+                    Default: 1e-6
+            hessian_inverse_tol (float): This implementation computes the
+                    pseudo-inverse of the (square root of) Hessians.  This is the
+                    tolerance to use in that computation.
+                    Default: 1e-6
+            projection_on_cpu (bool, optional): Whether to move the projection,
+                    i.e. low-rank approximation of the inverse Hessian, to cpu, to save
+                    gpu memory.
+                    Default: True
+            show_progress (bool, optional): Whether to show the progress of
+                    computations in both the `fit` and `predict` methods.
+                    Default: False
+            independent_factors (bool, optional): Whether to make the approximating
+                    assumption that the input and output gradient for a layer are
+                    independent when estimating the Hessian.
+                    Default: True
         """
         self.model = model
 
@@ -118,7 +164,11 @@ class KFACEmbedder(EmbedderBase):
 
         self.layer_modules = None
         if not (layers is None):
-            self.layer_modules = _set_active_parameters(model, layers, supported_layers=SUPPORTED_LAYERS)
+            self.layer_modules = _set_active_parameters(
+                model,
+                layers,
+                supported_layers=SUPPORTED_LAYERS,
+            )
         else:
             self.layer_modules = list(model.modules())
 
@@ -146,7 +196,7 @@ class KFACEmbedder(EmbedderBase):
         dataloader: DataLoader,
     ):
         r"""
-        Does the computation needed for computing influence embeddings, which is
+        Does the computation needed for computing embeddings, which is
         finding the top eigenvectors / eigenvalues of the Hessian, computed
         using `dataloader`.
 
@@ -224,7 +274,9 @@ class KFACEmbedder(EmbedderBase):
         )
 
         logging.info("compute factors")
-        for (layer_hessian_flattened, layer) in zip(layer_hessians_flattened, self.layer_modules):
+        for layer_hessian_flattened, layer in zip(
+            layer_hessians_flattened, self.layer_modules
+        ):
             logging.info(f"compute factors for layer {layer}")
             ls, vs = _top_eigen(
                 layer_hessian_flattened,
@@ -252,7 +304,7 @@ class KFACEmbedder(EmbedderBase):
 
         if self.show_progress:
             dataloader = _progress_bar_constructor(
-                self, dataloader, "embeddings", "training data"
+                self, dataloader, "embeddings", "test data"
             )
 
         # always return embeddings on cpu

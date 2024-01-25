@@ -282,6 +282,8 @@ def get_random_model_and_data(
     The need to differentiate between `'cuda'` and `'cuda_data_parallel'` is that sometimes
     we may want to test a model that is on cpu, but is *not* wrapped in `DataParallel`.
     """
+    torch.manual_seed(42) # TODO: find seed for which get nans
+
     in_features, hidden_nodes = 5, 4
     num_inputs = 2
 

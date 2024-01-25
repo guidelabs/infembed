@@ -1,0 +1,5 @@
+_target_: infembed.embedder._core.dim_reduct_embedder.PCAEmbedder
+_partial_: true
+incremental_pca_kwargs:
+  n_components: 100
+show_progress: true

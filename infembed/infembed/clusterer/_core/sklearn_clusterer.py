@@ -35,6 +35,7 @@ class SklearnClusterer(ClustererBase):
         if not hasattr(self.sklearn_clusterer, "fit"):
             raise NotImplementedError
         np.random.seed(42)
+        assert isinstance(data.embeddings, torch.Tensor)
         self.sklearn_clusterer.fit(data.embeddings.detach().cpu())
         return self
 
@@ -48,7 +49,8 @@ class SklearnClusterer(ClustererBase):
         """
         if not hasattr(self.sklearn_clusterer, "fit_predict"):
             raise NotImplementedError
-        np.random.seed(42)
+        np.random.seed(42) # TODO: have systematic way to random seed
+        assert isinstance(data.embeddings, torch.Tensor)
         return _cluster_assignments_to_indices(
             torch.from_numpy(
                 self.sklearn_clusterer.fit_predict(data.embeddings.detach().cpu())
@@ -64,6 +66,7 @@ class SklearnClusterer(ClustererBase):
         """
         if not hasattr(self.sklearn_clusterer, "predict"):
             raise NotImplementedError
+        assert isinstance(data.embeddings, torch.Tensor)
         return _cluster_assignments_to_indices(
             self.sklearn_clusterer.predict(data.embeddings.detach().cpu())
         )

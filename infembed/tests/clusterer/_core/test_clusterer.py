@@ -31,6 +31,9 @@ class TestFitPredict(TestCase):
                 max_depth=5,
                 branching_factor=2,
             ),
+            SklearnClusterer(
+                KMeans(n_clusters=5)
+            ),
         ],
         name_func=build_test_name_func(),
     )
