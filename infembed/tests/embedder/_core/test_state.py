@@ -2,6 +2,7 @@ from typing import Callable, Union
 from unittest import TestCase
 from infembed.embedder._core.arnoldi_embedder import ArnoldiEmbedder
 from infembed.embedder._core.fast_kfac_embedder import FastKFACEmbedder
+from infembed.embedder._core.gradient_embedder import GradientEmbedder
 from infembed.embedder._core.kfac_embedder import KFACEmbedder
 from infembed.embedder._utils.common import NotFitException, _format_inputs_dataset
 from .._utils.common import (
@@ -148,6 +149,18 @@ class TestSaveLoad(TestCase):
                 (
                     EmbedderConstructor(
                         ArnoldiEmbedder,
+                        layers=["linear1", "conv"],
+                        # layers=["linear1"],
+                        projection_dim=100,
+                        # hessian_inverse_tol=0.0,
+                        hessian_inverse_tol=-1e-2,
+                        hessian_reg=1e-8,
+                    ),
+                    "conv",
+                ),
+                (
+                    EmbedderConstructor(
+                        GradientEmbedder,
                         layers=["linear1", "conv"],
                         # layers=["linear1"],
                         projection_dim=100,
