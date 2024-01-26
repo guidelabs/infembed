@@ -236,7 +236,7 @@ def _top_eigen(
     rule = torch.sum(vs, dim=0) > 0  # entries are 0/1
     rule_multiplier = (2 * rule) - 1  # entries are -1/1
     vs = vs * rule_multiplier.unsqueeze(0)
-#    assert len(ls) == H.shape[0]
+    assert len(ls) == H.shape[0]
     return ls, vs
 
 
