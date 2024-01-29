@@ -50,7 +50,7 @@ class PCAEmbedder(EmbedderBase):
             base_embedder,
             incremental_pca_kwargs,
         )
-
+        self.projection_dim = projection_dim
         self.show_progress = show_progress
 
         self.incremental_pca: Optional[IncrementalPCA] = None
@@ -83,13 +83,24 @@ class PCAEmbedder(EmbedderBase):
                 self, dataloader, "pca", "training data"
             )
 
+        embeddings_for_pca = []
+        num_embeddings_for_pca = 0
         for batch in dataloader:
+
             batch_embeddings = self.base_embedder.predict(_format_inputs_dataset(batch))
-            # import pdb
-            # pdb.set_trace()
-            if self.incremental_pca.n_components <= len(batch_embeddings):
+            embeddings_for_pca.append(batch_embeddings)
+            num_embeddings_for_pca += len(batch_embeddings)
+
+            if num_embeddings_for_pca > self.projection_dim:
+            # if self.incremental_pca.n_components <= len(batch_embeddings):
                 # because can only call `partial_fit` if batch size is large enough
-                self.incremental_pca.partial_fit(batch_embeddings)
+                try:
+                    self.incremental_pca.partial_fit(torch.cat(embeddings_for_pca, dim=0))
+                except:
+                    import pdb
+                    pdb.set_trace()
+                embeddings_for_pca = []
+                num_embeddings_for_pca = 0
 
         return self
 

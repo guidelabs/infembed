@@ -130,12 +130,6 @@ class TestEmbeddingDim(TestCase):
         )
 
         # it should equal dimension of embedding
-        try:
-            assert (
-                num_requires_grad == embeddings.shape[1]
-            ), "embedding dim does not equal the number of parameters for which `requires_grad=True`"
-        except:
-            print(num_requires_grad, embeddings.shape[1])
-            import pdb
-
-            pdb.set_trace()
+        assert (
+            num_requires_grad == embeddings.shape[1]
+        ), "embedding dim does not equal the number of parameters for which `requires_grad=True`"
