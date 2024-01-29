@@ -41,3 +41,13 @@ class HuggingfaceWrapperModel(nn.Module):
 class HuggingfaceLoss(nn.Module):
     def __call__(self, output, target):
         return output.loss
+
+
+def init_linear(m):
+    if isinstance(m, (nn.Conv2d, nn.Linear)):
+        nn.init.kaiming_normal_(m.weight)
+        if m.bias is not None: nn.init.zeros_(m.bias)
+
+
+def get_all_parameters(model):
+    return model.parameters()

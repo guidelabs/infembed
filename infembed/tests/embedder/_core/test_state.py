@@ -163,10 +163,10 @@ class TestSaveLoad(TestCase):
                         GradientEmbedder,
                         layers=["linear1", "conv"],
                         # layers=["linear1"],
-                        projection_dim=100,
+                        # projection_dim=100,
                         # hessian_inverse_tol=0.0,
-                        hessian_inverse_tol=-1e-2,
-                        hessian_reg=1e-8,
+                        # hessian_inverse_tol=-1e-2,
+                        # hessian_reg=1e-8,
                     ),
                     "conv",
                 ),
@@ -218,7 +218,9 @@ class TestSaveLoad(TestCase):
         with tempfile.NamedTemporaryFile() as tmp:
             embedder.save(tmp.name)
             embedder.reset()
-            self.assertRaises(NotFitException, embedder.predict, test_dataloader)
+            if not isinstance(embedder, GradientEmbedder):
+                # `GradientEmbedder` does not need `fit` to be called
+                self.assertRaises(NotFitException, embedder.predict, test_dataloader)
             embedder.load(tmp.name)
             embeddings_2 = embedder.predict(test_dataloader)
 

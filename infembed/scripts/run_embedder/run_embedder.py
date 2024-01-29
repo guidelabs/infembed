@@ -57,8 +57,23 @@ def run(cfg: DictConfig):
     """
     computes embeddings.  see `run_embedder` to see what `cfg` should define.
     """
+    # 'embedder_constructor' can either directly contain it, or also contain a
+    # wrapper constructor.  handle the two cases
+    if "wrapper_embedder_constructor" in cfg.embedder_constructor:
+        embedder_constructor = instantiate(
+            cfg.embedder_constructor.embedder_constructor
+        )
+        wrapper_embedder_constructor = instantiate(
+            cfg.embedder_constructor.wrapper_embedder_constructor
+        )
+    else:
+        embedder_constructor = instantiate(
+            cfg.embedder_constructor
+        )
+        wrapper_embedder_constructor = None
+
     run_embedder(
-        instantiate(cfg.embedder_constructor),
+        embedder_constructor,
         instantiate(cfg.model.model),
         OmegaConf.to_container(cfg.model.layers, resolve=True),
         instantiate(cfg.train_dataloader) if cfg.train_dataloader is not None else None,
@@ -66,9 +81,7 @@ def run(cfg: DictConfig):
         cfg.io.embeddings_path,
         cfg.io.fit_results_path,
         cfg.io.load_fit_results,
-        instantiate(cfg.wrapper_embedder_constructor)
-        if "wrapper_embedder_constructor" in cfg
-        else None,
+        wrapper_embedder_constructor,
     )
 
 

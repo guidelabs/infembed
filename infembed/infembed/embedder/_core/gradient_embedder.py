@@ -81,7 +81,7 @@ class GradientEmbedder(EmbedderBase):
             dataloader (DataLoader): The dataloader containing data needed to learn how
                     to compute the embeddings
         """
-        pass
+        return self
 
     def predict(self, dataloader: DataLoader) -> Tensor:
         """
@@ -103,9 +103,13 @@ class GradientEmbedder(EmbedderBase):
             features, labels = tuple(batch[0:-1]), batch[-1]
 
             # get jacobians (and corresponding name of parameters?)
+            # print('gg',[(name, p.numel()) for (name, p) in self.model.named_parameters() if p.requires_grad])
             jacobians = _compute_jacobian_sample_wise_grads_per_batch(
                 self, features, labels, self.loss_fn, self.reduction_type
             )
+            # print('hh', [jacobian.shape for jacobian in jacobians])
+            # import pdb
+            # pdb.set_trace()
             with torch.no_grad():
                 return _flatten_sample_wise_grads(jacobians).to(device=return_device)
             

@@ -76,9 +76,13 @@ class PCAEmbedder(EmbedderBase):
 
         for batch in dataloader:
             batch_embeddings = self.base_embedder.predict(_format_inputs_dataset(batch))
+            # import pdb
+            # pdb.set_trace()
             if self.incremental_pca.n_components <= len(batch_embeddings):
                 # because can only call `partial_fit` if batch size is large enough
                 self.incremental_pca.partial_fit(batch_embeddings)
+
+        return self
 
     def predict(self, dataloader: DataLoader) -> Tensor:
         """
