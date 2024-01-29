@@ -23,18 +23,29 @@ class PCAEmbedder(EmbedderBase):
     def __init__(
         self,
         base_embedder: EmbedderBase,
-        incremental_pca_kwargs: Dict,
+        projection_dim: int=10,
+        incremental_pca_kwargs: Optional[Dict] = None,
         show_progress: bool = True,
     ):
         r"""
         Args:
             base_embedder (EmbedderBase): the embedder whose embeddings will have its
                     dimension reduced.
-            incremental_pca_kwargs (dict): kwargs to pass to the `IncrementalPCA`
-                    constructor.  See https://scikit-learn.org/stable/modules/generated/sklearn.decomposition.IncrementalPCA.html
-                    for details.  For example, `n_components` specifies the dimension
-                    of the projection.
+            projection_dim (int, optional): The dimension of the embeddings that are
+                    computed.
+            incremental_pca_kwargs (dict, optional): additional kwargs to pass to the
+                    `IncrementalPCA` constructor.  See
+                    https://scikit-learn.org/stable/modules/generated/sklearn.decomposition.IncrementalPCA.html
+                    for details.  The 'n_components' argument is already specified via
+                    the `projection_dim` constructor argument here, so no need to
+                    specify it again.
+            show_progress (bool, optional): Whether to show the progress of
+                    computations in both the `fit` and `predict` methods.
+                    Default: False
         """
+        if incremental_pca_kwargs is None:
+            incremental_pca_kwargs = {}
+        incremental_pca_kwargs['n_components'] = projection_dim
         self.base_embedder, self.incremental_pca_kwargs = (
             base_embedder,
             incremental_pca_kwargs,
@@ -49,11 +60,9 @@ class PCAEmbedder(EmbedderBase):
         dataloader: DataLoader,
     ):
         r"""
-        Does the computation needed for computing embeddings, which is
-        finding the top eigenvectors / eigenvalues of the Hessian, computed
-        using `dataloader`.  Note that the batch size of `dataloader` needs to be
-        greater than the `n_components` specified in the `incremental_pca_kwargs`
-        constructor argument.
+        Does the computation needed for computing embeddings.  Note that the batch size
+        of `dataloader` needs to be greater than the `n_components` specified in the
+        `incremental_pca_kwargs` constructor argument.
 
         Args:
             dataloader (DataLoader): The dataloader containing data needed to learn how

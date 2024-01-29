@@ -1,4 +1,5 @@
 from typing import Callable, List, Optional, Union
+from infembed.embedder._core.dim_reduct_embedder import PCAEmbedder
 from infembed.embedder._core.embedder_base import EmbedderBase
 from infembed.embedder._utils.common import (
     _check_loss_fn,
@@ -103,13 +104,9 @@ class GradientEmbedder(EmbedderBase):
             features, labels = tuple(batch[0:-1]), batch[-1]
 
             # get jacobians (and corresponding name of parameters?)
-            # print('gg',[(name, p.numel()) for (name, p) in self.model.named_parameters() if p.requires_grad])
             jacobians = _compute_jacobian_sample_wise_grads_per_batch(
                 self, features, labels, self.loss_fn, self.reduction_type
             )
-            # print('hh', [jacobian.shape for jacobian in jacobians])
-            # import pdb
-            # pdb.set_trace()
             with torch.no_grad():
                 return _flatten_sample_wise_grads(jacobians).to(device=return_device)
             
@@ -144,3 +141,61 @@ class GradientEmbedder(EmbedderBase):
         Removes the effect of calling `fit` or `load`
         """
         pass
+
+
+class PCAGradientEmbedder(PCAEmbedder):
+    """
+    This embedder computes gradients, but unlike `GradientEmbedder`, additionally
+    reduces their dimension using PCA.  This is a wrapper around `PCAEmbedder` which
+    uses `GradientEmbedder` as the 'base_embedder'.
+    """
+    def __init__(
+        self,
+        model: Module,
+        layers: Optional[List[str]] = None,
+        loss_fn: Optional[Union[Module, Callable]] = None,
+        sample_wise_grads_per_batch: bool = False,
+        projection_dim: int = 10,
+        show_progress: bool = False,
+    ):
+        """
+        Args:
+            model (Module): The model used to compute the embeddings.
+            layers (list of str, optional): names of modules in which to consider
+                    gradients.  If `None` or not provided, all modules will be used.
+                    Default: None
+            loss_fn (Module or Callable, optional): The loss function used to compute the
+                    Hessian.  It should behave like a "reduction" loss function, where
+                    reduction is either 'sum', 'mean', or 'none', and have a
+                    `reduction` attribute.  For example, `BCELoss(reduction='sum')`
+                    could be a valid loss function.  See the caveat under the
+                    description for the `sample_wise_grads_per_batch` argument.  If None,
+                    the loss is the output of `model`, which is assumed to be a single
+                    scalar for a batch.
+                    Default: None
+            sample_wise_grads_per_batch (bool, optional): Whether to use an efficiency
+                    trick to compute the per-example gradients.  If True, `loss_fn` must
+                    behave like a `reduction='sum'` or `reduction='sum'` loss function,
+                    i.e. `BCELoss(reduction='sum')` or `BCELoss(reduction='mean')`.  If
+                    False, `loss_fn` must behave like a `reduction='none'` loss
+                    function, i.e. `BCELoss(reduction='none')`.
+                    Default: True
+            projection_dim (int, optional):  The dimension of the embeddings that are 
+                    computed.
+                    Default: 10
+            show_progress (bool, optional): Whether to show the progress of
+                    computations in both the `fit` and `predict` methods.
+                    Default: False
+        """
+        PCAEmbedder.__init__(
+            self,
+            base_embedder=GradientEmbedder(
+                model=model,
+                layers=layers,
+                loss_fn=loss_fn,
+                sample_wise_grads_per_batch=sample_wise_grads_per_batch,
+                show_progress=False,
+            ),
+            projection_dim=projection_dim,
+            show_progress=show_progress,
+        )

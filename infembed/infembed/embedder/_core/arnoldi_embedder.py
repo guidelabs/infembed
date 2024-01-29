@@ -379,7 +379,7 @@ class ArnoldiEmbedder(EmbedderBase):
 
         self.projection_on_cpu = projection_on_cpu
         self.show_progress = show_progress
-        self.vhp = vhp
+        self.hvp_mode = hvp_mode
 
     def fit(
         self,
@@ -433,7 +433,7 @@ class ArnoldiEmbedder(EmbedderBase):
         # create function that computes hessian-vector product, given a vector
         # represented as a tuple of tensors
 
-        HVP = AutogradHVP(show_progress, self.vhp)
+        HVP = AutogradHVP(show_progress, self.hvp_mode)
 
         HVP.setup(
             self.model,
