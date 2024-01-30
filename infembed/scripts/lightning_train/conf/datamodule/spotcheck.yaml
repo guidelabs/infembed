@@ -9,13 +9,17 @@ train_dataloader:
   limit: null
   file_name_replace_prefix_from: '/data/users/fultonwang/error_clustering'
   file_name_replace_prefix_to: '/spotcheck/error_clustering'
+  num_workers: 47
+  shuffle: true
 val_dataloader:
   _target_: data._core.spotcheck.get_spotcheck_dataloader
   path: '/spotcheck/error_clustering/experiments/Supplement/Datasets/Blindspots/Synthetic/complex-${trial.trial}'
-  phase: 'test'
+  phase: 'val'
   batch_size: 32
   # device: ${train_dataloader.device}
   positive_only: false
   limit: null
   file_name_replace_prefix_from: '/data/users/fultonwang/error_clustering'
   file_name_replace_prefix_to: '/spotcheck/error_clustering'
+  num_workers: 47
+  shuffle: false

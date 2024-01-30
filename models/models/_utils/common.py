@@ -51,3 +51,11 @@ def init_linear(m):
 
 def get_all_parameters(model):
     return model.parameters()
+
+
+class GenericConfigureOptimizers:
+    def __init__(self, parameters_getter, optimizer_constructor):
+        self.parameters_getter, self.optimizer_constructor = parameters_getter, optimizer_constructor
+
+    def __call__(self, model):
+        return self.optimizer_constructor(self.parameters_getter(model=model))

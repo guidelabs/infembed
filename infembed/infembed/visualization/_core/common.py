@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 from typing import List
 import pandas as pd
 from infembed.utils.common import Data
+import matplotlib.pyplot as plt
+import torch
 
 
 class Displayer(ABC):
@@ -120,3 +122,44 @@ class DisplayCounts(SingleClusterDisplayer):
         for col in self.cols:
             counts = data.metadata.iloc[cluster][col].value_counts().sort_index()
             print(f"{col}: {dict(counts)}")
+
+
+class SingleExampleDisplayer(ABC):
+    @abstractmethod
+    def __call__(self, i: int, data: Data):
+        pass
+
+
+class DisplayMetadata(SingleExampleDisplayer):
+    def __init__(self, cols: List[str]):
+        self.cols = cols
+
+    def __call__(self, i: int, data: Data):
+        print(pd.DataFrame({i: data.metadata[self.cols].iloc[i]}).T)
+
+
+class DisplayPIL(SingleExampleDisplayer):
+    def __call__(self, i: int, data: Data):
+        #fig, ax = plt.subplots()
+        fig = plt.figure(figsize=(3,4))
+        ax = fig.add_subplot(1,1,1)
+        # assume dataset has the image in 0-th position
+        from torchvision.transforms.functional import pil_to_tensor
+        # .permute(1, 2, 0)
+        ax.imshow(pil_to_tensor(data.dataset[i][0]).permute(1, 2, 0))
+        # ax.imshow(torch.clip(pil_to_tensor(data.dataset[i][0]).permute(1, 2, 0), 0, 1))
+        fig.show()
+        #plt.close(fig)
+
+
+class DisplaySingleExamples(SingleClusterDisplayer):
+    def __init__(self, single_example_displayers: List[SingleExampleDisplayer], limit=None):
+        self.single_example_displayers = single_example_displayers
+        self.limit = limit
+
+    def __call__(self, cluster: List[int], data: Data):
+        for (num, i) in enumerate(cluster):
+            if self.limit is not None and num >= self.limit:
+                break
+            for displayer in self.single_example_displayers:
+                displayer(i, data)
