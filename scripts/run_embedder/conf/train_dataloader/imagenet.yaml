@@ -1,0 +1,13 @@
+_target_: torch.utils.data.DataLoader
+dataset:
+  _target_: 'data._utils.common.RandomSubset'
+  dataset:
+    _target_: torchvision.datasets.ImageNet
+    root: '/home/ubuntu/Documents/infembed/data/files/imagenet'
+    split: 'val'
+  num: 5000
+collate_fn: 
+  _target_: data._core.imagenet.get_collate_fn
+  device: 'cuda:0'
+batch_size: 128
+shuffle: true
