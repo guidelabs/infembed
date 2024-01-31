@@ -110,6 +110,13 @@ def _set_active_parameters(
     assert isinstance(layers, List), "`layers` should be a list!"
     assert len(layers) > 0, "`layers` cannot be empty!"
     assert isinstance(layers[0], str), "`layers` should contain str layer names."
+
+    # first set `requires_grad` to false for all parameters
+    for param in model.parameters():
+        param.requires_grad = False
+
+    # get layers who are supported.  since no supported layer can be a submodule of
+    # another supported layer, this should result in no nested layers
     layer_modules = [_get_module_from_name(model, layer) for layer in layers]
     if supported_layers is not None:
         layer_modules = [
@@ -123,12 +130,13 @@ def _set_active_parameters(
             )
         ]
 
+    # set the parameters in supported layers to true
     for layer, layer_module in zip(layers, layer_modules):
         for name, param in layer_module.named_parameters():
             if not param.requires_grad:
                 warnings.warn(
                     "Setting required grads for layer: {}, name: {}".format(
-                        ".".join(layer), name
+                        layer, name
                     )
                 )
                 param.requires_grad = True

@@ -3,17 +3,29 @@ from infembed.clusterer._core.clusterer_base import ClustererBase
 from infembed.clusterer._utils.common import _cluster_assignments_to_indices
 import torch
 import numpy as np
+from collections import defaultdict
 from infembed.utils.common import Data
+import faiss
 
 
-class SklearnClusterer(ClustererBase):
+class FAISSClusterer(ClustererBase):
     """
-    Implementation of `ClustererBase` that is a wrapper around an Sklearn clustering
-    implementation, i.e. it just converts the input tensor to numpy array.
+    Implementation of `ClustererBase` that is a wrapper around FAISS's Kmeans
+    implementation.
     """
 
-    def __init__(self, sklearn_clusterer):
-        self.sklearn_clusterer = sklearn_clusterer
+    def __init__(self, **faiss_kmeans_kwargs):
+        """
+        Args:
+            faiss_kmeans_kwargs: keyword arguments to be directly passed to the
+                    `faiss.Kmeans` constructor.  Relevant arguments include
+                    `k` - the number of clusters, `spherical` - whether to
+                    normalize the centroids after each iteration, `niter` - number of
+                    k-means iterations.  See https://github.com/facebookresearch/faiss/wiki/Faiss-building-blocks:-clustering,-PCA,-quantization
+                    for details.
+        """
+        self.faiss_kmeans_kwargs = faiss_kmeans_kwargs
+        self.kmeans = None
 
     def fit(self, data: Data):
         r"""
@@ -25,11 +37,10 @@ class SklearnClusterer(ClustererBase):
             data (Data): `Data` representing the examples used for doing the
                     prepratory computation.
         """
-        if not hasattr(self.sklearn_clusterer, "fit"):
-            raise NotImplementedError
-        np.random.seed(42)
         assert isinstance(data.embeddings, torch.Tensor)
-        self.sklearn_clusterer.fit(data.embeddings.detach().cpu())
+        d = data.embeddings.shape[1]
+        self.kmeans = faiss.Kmeans(d=d, seed=42, **self.faiss_kmeans_kwargs)
+        self.kmeans.train(data.embeddings)
         return self
 
     def fit_predict(self, data: Data) -> List[List[int]]:
@@ -40,15 +51,8 @@ class SklearnClusterer(ClustererBase):
         Args:
             data (Data): `Data` representing the examples to assign to clusters.
         """
-        if not hasattr(self.sklearn_clusterer, "fit_predict"):
-            raise NotImplementedError
-        np.random.seed(42) # TODO: have systematic way to random seed
-        assert isinstance(data.embeddings, torch.Tensor)
-        return _cluster_assignments_to_indices(
-            torch.from_numpy(
-                self.sklearn_clusterer.fit_predict(data.embeddings.detach().cpu())
-            )
-        )
+        self.fit(data)
+        return self.predict(data)
 
     def predict(self, data: Data) -> List[List[int]]:
         r"""
@@ -57,9 +61,6 @@ class SklearnClusterer(ClustererBase):
         Args:
             data (Data): `Data` representing the examples to assign to clusters.
         """
-        if not hasattr(self.sklearn_clusterer, "predict"):
-            raise NotImplementedError
         assert isinstance(data.embeddings, torch.Tensor)
-        return _cluster_assignments_to_indices(
-            self.sklearn_clusterer.predict(data.embeddings.detach().cpu())
-        )
+        _, I = self.kmeans.index.search(data.embeddings, 1)
+        return _cluster_assignments_to_indices(I.squeeze())

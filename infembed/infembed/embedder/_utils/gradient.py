@@ -149,7 +149,7 @@ def _compute_jacobian_wrt_params_with_sample_wise_trick(
             sample_grad_wrapper.remove_hooks()
 
         return grads
-    
+
 
 def _extract_parameters_from_layers(layer_modules):
     layer_parameters = []
@@ -162,6 +162,9 @@ def _extract_parameters_from_layers(layer_modules):
         assert (
             len(layer_parameters) > 0
         ), "No parameters are available for modules for provided input `layers`"
+        assert len(set(layer_parameters)) == len(
+            layer_parameters
+        ), "There are duplicate parameters in which gradients are considered."
     return layer_parameters
 
 

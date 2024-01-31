@@ -2,6 +2,7 @@ from typing import Callable, Union
 from unittest import TestCase
 from infembed.embedder._core.arnoldi_embedder import ArnoldiEmbedder
 from infembed.embedder._core.fast_kfac_embedder import FastKFACEmbedder
+from infembed.embedder._core.gradient_embedder import GradientEmbedder, PCAGradientEmbedder
 from infembed.embedder._core.kfac_embedder import KFACEmbedder
 from infembed.embedder._utils.common import NotFitException, _format_inputs_dataset
 from .._utils.common import (
@@ -157,6 +158,30 @@ class TestSaveLoad(TestCase):
                     ),
                     "conv",
                 ),
+                (
+                    EmbedderConstructor(
+                        GradientEmbedder,
+                        layers=["linear1", "conv"],
+                        # layers=["linear1"],
+                        # projection_dim=100,
+                        # hessian_inverse_tol=0.0,
+                        # hessian_inverse_tol=-1e-2,
+                        # hessian_reg=1e-8,
+                    ),
+                    "conv",
+                ),
+                (
+                    EmbedderConstructor(
+                        PCAGradientEmbedder,
+                        layers=["linear1", "conv"],
+                        # layers=["linear1"],
+                        projection_dim=5,
+                        # hessian_inverse_tol=0.0,
+                        # hessian_inverse_tol=-1e-2,
+                        # hessian_reg=1e-8,
+                    ),
+                    "conv",
+                ),
             ]
             for unpack_inputs in [
                 False,
@@ -205,7 +230,9 @@ class TestSaveLoad(TestCase):
         with tempfile.NamedTemporaryFile() as tmp:
             embedder.save(tmp.name)
             embedder.reset()
-            self.assertRaises(NotFitException, embedder.predict, test_dataloader)
+            if not isinstance(embedder, GradientEmbedder):
+                # `GradientEmbedder` does not need `fit` to be called
+                self.assertRaises(NotFitException, embedder.predict, test_dataloader)
             embedder.load(tmp.name)
             embeddings_2 = embedder.predict(test_dataloader)
 

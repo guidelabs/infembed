@@ -252,6 +252,7 @@ class ArnoldiEmbedder(EmbedderBase):
         hessian_inverse_tol: float = 1e-5,
         projection_on_cpu: bool = True,
         show_progress: bool = False,
+        hvp_mode: str = 'vhp',
     ):
         """
         Args:
@@ -378,6 +379,7 @@ class ArnoldiEmbedder(EmbedderBase):
 
         self.projection_on_cpu = projection_on_cpu
         self.show_progress = show_progress
+        self.hvp_mode = hvp_mode
 
     def fit(
         self,
@@ -431,7 +433,7 @@ class ArnoldiEmbedder(EmbedderBase):
         # create function that computes hessian-vector product, given a vector
         # represented as a tuple of tensors
 
-        HVP = AutogradHVP(show_progress)
+        HVP = AutogradHVP(show_progress, self.hvp_mode)
 
         HVP.setup(
             self.model,
@@ -453,57 +455,60 @@ class ArnoldiEmbedder(EmbedderBase):
         # will infer it through the device of this random vector
         # the order of parameters is determined using the same logic as in `HVP`, based
         # on `self.layer_modules`
-        params = (
-            self.model.parameters()
-            if self.layer_modules is None
-            else _extract_parameters_from_layers(self.layer_modules)
-        )
-        b = _parameter_to(
-            tuple(torch.randn_like(param) for param in params),
-            device=self.model_device,
-        )
 
-        # perform the arnoldi iteration, see its documentation for what its return
-        # values are.  note that `H` is *not* the Hessian.
-        logging.info("start `_parameter_arnoldi`")
-        qs, H = _parameter_arnoldi(
-            HVP,
-            b,
-            self.arnoldi_dim,
-            self.arnoldi_tol,
-            torch.device("cpu") if projection_on_cpu else self.model_device,
-            show_progress,
-        )
+        with torch.no_grad():
 
-        # `ls`` and `vs`` are (approximately) the top eigenvalues / eigenvectors of the
-        # matrix used (implicitly) to compute Hessian-vector products by the `HVP`
-        # input to `_parameter_arnoldi`. this matrix is the Hessian of the loss,
-        # summed over the examples in `dataloader`. note that because the vectors in
-        # the Hessian-vector product are actually tuples of tensors representing
-        # parameters, `vs`` is a list of tuples of tensors.  note that here, `H` is
-        # *not* the Hessian (`qs` and `H` together define the Krylov subspace of the
-        # Hessian)
+            params = (
+                self.model.parameters()
+                if self.layer_modules is None
+                else _extract_parameters_from_layers(self.layer_modules)
+            )
+            b = _parameter_to(
+                tuple(torch.randn_like(param) for param in params),
+                device=self.model_device,
+            )
 
-        logging.info("start `_parameter_distill`")
-        ls, vs = _parameter_distill(
-            qs, H, self.projection_dim, self.hessian_reg, self.hessian_inverse_tol
-        )
+            # perform the arnoldi iteration, see its documentation for what its return
+            # values are.  note that `H` is *not* the Hessian.
+            logging.info("start `_parameter_arnoldi`")
+            qs, H = _parameter_arnoldi(
+                HVP,
+                b,
+                self.arnoldi_dim,
+                self.arnoldi_tol,
+                torch.device("cpu") if projection_on_cpu else self.model_device,
+                show_progress,
+            )
 
-        # if `vs` were a 2D tensor whose columns contain the top eigenvectors of the
-        # aforementioned hessian, then `R` would be `vs @ torch.diag(ls ** -0.5)`, i.e.
-        # scaling each column of `vs` by the corresponding entry in `ls ** -0.5`.
-        # however, since `vs` is instead a list of tuple of tensors, `R` should be
-        # a list of tuple of tensors, where each entry in the list is scaled by the
-        # corresponding entry in `ls ** 0.5`, which we first compute.
-        ls = (1.0 / ls) ** 0.5
+            # `ls`` and `vs`` are (approximately) the top eigenvalues / eigenvectors of the
+            # matrix used (implicitly) to compute Hessian-vector products by the `HVP`
+            # input to `_parameter_arnoldi`. this matrix is the Hessian of the loss,
+            # summed over the examples in `dataloader`. note that because the vectors in
+            # the Hessian-vector product are actually tuples of tensors representing
+            # parameters, `vs`` is a list of tuples of tensors.  note that here, `H` is
+            # *not* the Hessian (`qs` and `H` together define the Krylov subspace of the
+            # Hessian)
 
-        # then, scale each entry in `vs` by the corresponding entry in `ls ** 0.5`
-        # since each entry in `vs` is a tuple of tensors, we use a helper function
-        # that takes in a tuple of tensors, and a scalar, and multiplies every tensor
-        # by the scalar.
-        return ArnoldiEmbedderFitResults(
-            [_parameter_multiply(v, l) for (v, l) in zip(vs, ls)]
-        )
+            logging.info("start `_parameter_distill`")
+            ls, vs = _parameter_distill(
+                qs, H, self.projection_dim, self.hessian_reg, self.hessian_inverse_tol
+            )
+
+            # if `vs` were a 2D tensor whose columns contain the top eigenvectors of the
+            # aforementioned hessian, then `R` would be `vs @ torch.diag(ls ** -0.5)`, i.e.
+            # scaling each column of `vs` by the corresponding entry in `ls ** -0.5`.
+            # however, since `vs` is instead a list of tuple of tensors, `R` should be
+            # a list of tuple of tensors, where each entry in the list is scaled by the
+            # corresponding entry in `ls ** 0.5`, which we first compute.
+            ls = (1.0 / ls) ** 0.5
+
+            # then, scale each entry in `vs` by the corresponding entry in `ls ** 0.5`
+            # since each entry in `vs` is a tuple of tensors, we use a helper function
+            # that takes in a tuple of tensors, and a scalar, and multiplies every tensor
+            # by the scalar.
+            return ArnoldiEmbedderFitResults(
+                [_parameter_multiply(v, l) for (v, l) in zip(vs, ls)]
+            )
 
     def predict(self, dataloader: DataLoader) -> Tensor:
         """
