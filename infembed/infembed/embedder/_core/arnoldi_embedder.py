@@ -381,6 +381,8 @@ class ArnoldiEmbedder(EmbedderBase):
         self.show_progress = show_progress
         self.hvp_mode = hvp_mode
 
+        self.fit_results = None
+
     def fit(
         self,
         dataloader: DataLoader,
@@ -457,7 +459,6 @@ class ArnoldiEmbedder(EmbedderBase):
         # on `self.layer_modules`
 
         with torch.no_grad():
-
             params = (
                 self.model.parameters()
                 if self.layer_modules is None
