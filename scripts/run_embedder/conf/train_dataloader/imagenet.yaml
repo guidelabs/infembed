@@ -10,3 +10,4 @@ collate_fn:
   _target_: data._core.imagenet.get_collate_fn
   device: 'cuda:0'
 batch_size: 128
+shuffle: true

@@ -54,13 +54,14 @@ class AutogradHVP(HVP):
     Implementation of `HVP` which uses `torch.autograd.functional.hvp`
     """
 
-    def __init__(self, show_progress: bool):
+    def __init__(self, show_progress: bool, hvp_mode: str):
         """
         Args:
             show_progress (bool): whether to show how many batches have been processed
                     in the HVP computation
         """
         self.show_progress = show_progress
+        self.hvp_mode = hvp_mode
         self.HVP: Optional[Callable] = None
 
     def setup(
@@ -105,7 +106,23 @@ class AutogradHVP(HVP):
         # batch and vector
         def batch_HVP(batch, v):
             tensor_tuple_loss = tensor_tuple_loss_given_batch(batch)
-            return torch.autograd.functional.hvp(tensor_tuple_loss, params, v=v)[1]
+            if self.hvp_mode == "vhp":
+                return torch.autograd.functional.vhp(tensor_tuple_loss, params, v=v)[1]
+            elif self.hvp_mode == "hvp":
+                return torch.autograd.functional.hvp(tensor_tuple_loss, params, v=v)[1]
+            elif self.hvp_mode == "manual_hvp":
+                from torch.func import jvp, grad
+                return jvp(
+                    grad(tensor_tuple_loss, argnums=tuple(range(len(params)))),
+                    params,
+                    v,
+                )[1]
+            elif self.hvp_mode == "manual_revrev":
+                from torch.func import vjp, grad
+                _, vjp_fn = vjp(grad(tensor_tuple_loss, argnums=tuple(range(len(params)))), *params)
+                return vjp_fn(v)
+            else:
+                raise Exception('`hvp_mode` not recognized')
 
         # define function that returns HVP of loss over `dataloader`, given a
         # specified vector

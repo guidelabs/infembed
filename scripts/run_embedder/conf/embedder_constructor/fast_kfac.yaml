@@ -3,7 +3,7 @@ _partial_: true
 loss_fn:
   _target_: torch.nn.CrossEntropyLoss
   reduction: 'sum'
-projection_dim: 25
+projection_dim: 100
 per_layer_blocks: 1
 sample_wise_grads_per_batch: true
 show_progress: true

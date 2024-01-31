@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 from typing import List
 import pandas as pd
 from infembed.utils.common import Data
+import matplotlib.pyplot as plt
+import torch
 
 
 class Displayer(ABC):
@@ -16,6 +18,36 @@ class Displayer(ABC):
         data: Data,
     ):
         pass
+
+
+class ClusterAUCDisplayer(Displayer):
+    """
+    see how well clustering prioritizes a given column in metadata
+    """
+    def __init__(self, col: str):
+        self.col = col
+
+    def __call__(self, clusters: List[List[int]], data: Data):
+        # make df with cluster and `col` as columns
+        d = {}
+        for k, cluster in enumerate(clusters):
+            for index in cluster:
+                d[index] = k
+        # print(pd.Series(d))
+        # print(data.metadata[self.col])
+        #import pdb
+        #pdb.set_trace()
+        df = pd.DataFrame({'cluster': pd.Series(d), self.col: data.metadata[self.col]})
+
+        def add_proportion(_df):
+            _df = _df.copy()
+            _df['proportion'] = _df[self.col].mean()
+            return _df
+        df = df.groupby('cluster').apply(add_proportion)
+        from sklearn.metrics import roc_auc_score
+        auc = roc_auc_score(df[self.col], df['proportion'])
+        print(f"AUC for {self.col}: {auc}")
+        
 
 
 class SingleClusterDisplayer(ABC):
@@ -75,3 +107,59 @@ class DisplayPredictionAndLabels(SingleClusterDisplayer):
         label_counts = data.metadata.iloc[cluster][self.label_col].value_counts()
         print(f"prediction: {dict(prediction_counts)}")
         print(f"label: {dict(label_counts)}")
+
+
+class DisplayCounts(SingleClusterDisplayer):
+    def __init__(self, cols: List[str]):
+        self.cols = cols
+
+    def __call__(
+        self,
+        cluster: List[int],
+        data: Data,
+    ):
+        assert data.metadata is not None
+        for col in self.cols:
+            counts = data.metadata.iloc[cluster][col].value_counts().sort_index()
+            print(f"{col}: {dict(counts)}")
+
+
+class SingleExampleDisplayer(ABC):
+    @abstractmethod
+    def __call__(self, i: int, data: Data):
+        pass
+
+
+class DisplayMetadata(SingleExampleDisplayer):
+    def __init__(self, cols: List[str]):
+        self.cols = cols
+
+    def __call__(self, i: int, data: Data):
+        print(pd.DataFrame({i: data.metadata[self.cols].iloc[i]}).T)
+
+
+class DisplayPIL(SingleExampleDisplayer):
+    def __call__(self, i: int, data: Data):
+        #fig, ax = plt.subplots()
+        fig = plt.figure(figsize=(3,4))
+        ax = fig.add_subplot(1,1,1)
+        # assume dataset has the image in 0-th position
+        from torchvision.transforms.functional import pil_to_tensor
+        # .permute(1, 2, 0)
+        ax.imshow(pil_to_tensor(data.dataset[i][0]).permute(1, 2, 0))
+        # ax.imshow(torch.clip(pil_to_tensor(data.dataset[i][0]).permute(1, 2, 0), 0, 1))
+        fig.show()
+        #plt.close(fig)
+
+
+class DisplaySingleExamples(SingleClusterDisplayer):
+    def __init__(self, single_example_displayers: List[SingleExampleDisplayer], limit=None):
+        self.single_example_displayers = single_example_displayers
+        self.limit = limit
+
+    def __call__(self, cluster: List[int], data: Data):
+        for (num, i) in enumerate(cluster):
+            if self.limit is not None and num >= self.limit:
+                break
+            for displayer in self.single_example_displayers:
+                displayer(i, data)

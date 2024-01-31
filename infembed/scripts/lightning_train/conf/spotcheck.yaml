@@ -1,0 +1,16 @@
+defaults:
+  - callbacks: standard
+  - datamodule: spotcheck
+  - model: spotcheck
+  - trainer_kwargs: standard
+  - _self_
+hydra:
+  run:
+#    dir: outputs/fast_kfac
+    dir: /home/ubuntu/Documents/infembed/infembed/examples/spotcheck/hydra_outputs/lightning_train/test
+#    dir: outputs/spotcheck/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+#    dir: outputs/fast_kfac
+    dir:  /home/ubuntu/Documents/infembed/infembed/examples/spotcheck/hydra_outputs/lightning_train/test
+#    dir: outputs/spotcheck/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: trial_${trial.trial}/lr_${model.configure_optimizers.optimizer_constructor.lr}

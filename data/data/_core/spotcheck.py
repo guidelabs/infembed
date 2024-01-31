@@ -132,7 +132,7 @@ def _load_phase(source, phase, index=None, file_name_replace_prefix_from=None, f
 
 
 def get_spotcheck_dataloader(
-    path, phase, batch_size, device="cpu", positive_only=False, limit=None, file_name_replace_prefix_from=None, file_name_replace_prefix_to=None
+    path, phase, batch_size, device="cpu", positive_only=False, limit=None, file_name_replace_prefix_from=None, file_name_replace_prefix_to=None, **dataloader_kwargs,
 ):
     files_tmp, labels_tmp = _load_phase(path, phase=phase, file_name_replace_prefix_from=file_name_replace_prefix_from, file_name_replace_prefix_to=file_name_replace_prefix_to)
     if positive_only:
@@ -149,7 +149,7 @@ def get_spotcheck_dataloader(
         return tuple([x.to(device=device) for x in batch])
 
     return torch.utils.data.DataLoader(
-        dataset_tmp, batch_size=batch_size, shuffle=False, collate_fn=collate_fn
+        dataset_tmp, batch_size=batch_size, collate_fn=collate_fn, **dataloader_kwargs,
     )
 
 
