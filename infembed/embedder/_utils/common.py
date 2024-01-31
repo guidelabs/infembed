@@ -347,6 +347,27 @@ def _compute_jacobian_sample_wise_grads_per_batch(
     )
 
 
+def _unflatten_params_factory(
+    param_shapes: Union[List[Tuple[int, ...]], Tuple[Tensor, ...]]
+):
+    """
+    returns a function which is the inverse of `_flatten_params`
+    """
+
+    def _unflatten_params(flattened_params):
+        params = []
+        offset = 0
+        for shape in param_shapes:
+            length = 1
+            for s in shape:
+                length *= s
+            params.append(flattened_params[offset : offset + length].view(shape))
+            offset += length
+        return tuple(params)
+
+    return _unflatten_params
+
+
 def _flatten_params(_params: Tuple[Tensor, ...]) -> Tensor:
     """
     Given a tuple of tensors, which is how Pytorch represents parameters of a model,

@@ -369,16 +369,6 @@ class ArnoldiEmbedder(EmbedderBase):
             else None,
         )
 
-        # self.layer_modules = None
-        # if not (layers is None):
-        #     # TODO: should let `self.layer_modules` only contain supported layers
-        #     self.layer_modules = _set_active_parameters(model, layers)
-        # else:
-        #     # only use supported layers.  TODO: add warning that some layers are not supported
-        #     # self.layer_modules = list(model.modules())
-        #     self.layer_modules = _set_active_parameters(model, layers)
-
-        # below initializations are specific to `ArnoldiEmbedder`
         self.projection_dim = projection_dim
 
         torch.manual_seed(seed)  # for reproducibility
@@ -395,6 +385,8 @@ class ArnoldiEmbedder(EmbedderBase):
         self.projection_on_cpu = projection_on_cpu
         self.show_progress = show_progress
         self.hvp_mode = hvp_mode
+
+        self.fit_results = None
 
     def fit(
         self,

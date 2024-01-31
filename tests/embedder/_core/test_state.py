@@ -5,6 +5,7 @@ from infembed.embedder._core.fast_kfac_embedder import FastKFACEmbedder
 from infembed.embedder._core.gradient_embedder import GradientEmbedder, PCAGradientEmbedder
 from infembed.embedder._core.kfac_embedder import KFACEmbedder
 from infembed.embedder._utils.common import NotFitException, _format_inputs_dataset
+from infembed.embedder._core.naive_embedder import NaiveEmbedder
 from .._utils.common import (
     EmbedderConstructor,
     _test_compare_implementations,
@@ -72,6 +73,15 @@ class TestSaveLoad(TestCase):
                 ),
                 (
                     EmbedderConstructor(
+                        NaiveEmbedder,
+                        layers=["linear"],
+                        projection_dim=None,
+                        hessian_inverse_tol=0.0,
+                    ),
+                    "one_layer_linear",
+                ),
+                (
+                    EmbedderConstructor(
                         FastKFACEmbedder,
                         layers=["linear1", "linear2"],
                         layer_block_projection_dim=None,
@@ -102,6 +112,15 @@ class TestSaveLoad(TestCase):
                 (
                     EmbedderConstructor(
                         ArnoldiEmbedder,
+                        layers=["linear1", "linear2"],
+                        projection_dim=None,
+                        hessian_inverse_tol=0.0,
+                    ),
+                    "seq",
+                ),
+                (
+                    EmbedderConstructor(
+                        NaiveEmbedder,
                         layers=["linear1", "linear2"],
                         projection_dim=None,
                         hessian_inverse_tol=0.0,
@@ -149,6 +168,18 @@ class TestSaveLoad(TestCase):
                 (
                     EmbedderConstructor(
                         ArnoldiEmbedder,
+                        layers=["linear1", "conv"],
+                        # layers=["linear1"],
+                        projection_dim=100,
+                        # hessian_inverse_tol=0.0,
+                        hessian_inverse_tol=-1e-2,
+                        hessian_reg=1e-8,
+                    ),
+                    "conv",
+                ),
+                (
+                    EmbedderConstructor(
+                        NaiveEmbedder,
                         layers=["linear1", "conv"],
                         # layers=["linear1"],
                         projection_dim=100,
