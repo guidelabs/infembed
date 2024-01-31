@@ -101,27 +101,44 @@ def _check_loss_fn(
 
 
 def _set_active_parameters(
-    model: Module, layers: List[str], supported_layers: Optional[List[type]]=None,
+    model: Module,
+    layers: Optional[List[str]],
+    supported_layers: Optional[List[type]] = None,
 ) -> List[Module]:
     """
     sets relevant parameters, as indicated by `layers`, to have `requires_grad=True`,
     and returns relevant modules.
+    if `layers` is None and `supported_layers` is None, changes `layers` to be `model`
+    if `layers is None and `supported_layers` is not None, returns supported layers in
+    `model`.
+    if `layers` is not None and `supported_layers` is None, returns layers in `layers`.
+    if `layers` is not None and `supported_layers` is not None, returns layers in
+    `layers` that are supported.
     """
-    assert isinstance(layers, List), "`layers` should be a list!"
-    assert len(layers) > 0, "`layers` cannot be empty!"
-    assert isinstance(layers[0], str), "`layers` should contain str layer names."
+    if layers is not None:
+        assert isinstance(layers, List), "`layers` should be a list!"
+        assert len(layers) > 0, "`layers` cannot be empty!"
+        assert isinstance(layers[0], str), "`layers` should contain str layer names."
 
     # first set `requires_grad` to false for all parameters
     for param in model.parameters():
         param.requires_grad = False
 
-    # get layers who are supported.  since no supported layer can be a submodule of
-    # another supported layer, this should result in no nested layers
-    layer_modules = [_get_module_from_name(model, layer) for layer in layers]
+    # get `layers` and `layer_modules`, which may not initially be compatible with
+    # requirements if `supported_layers` is not None
+    if layers is not None:
+        layer_modules = [_get_module_from_name(model, layer) for layer in layers]
+
     if supported_layers is not None:
-        layer_modules = [
-            layer_module
-            for layer_module in layer_modules
+        # have to return supported layers only.
+        if layers is None:
+            layers_and_modules = model.named_modules()
+        else:
+            layers_and_modules = zip(layers, layer_modules)
+
+        supported_layers_and_modules = [
+            (layer, layer_module)
+            for (layer, layer_module) in layers_and_modules
             if not all(
                 [
                     (not isinstance(layer_module, supported_layer))
@@ -129,15 +146,19 @@ def _set_active_parameters(
                 ]
             )
         ]
+        layers, layer_modules = map(list, zip(*supported_layers_and_modules))
+
+    if layers is None:
+        # `supported_layers` was None and `layers` not provided
+        layers = ["entire model"]
+        layer_modules = [model]
 
     # set the parameters in supported layers to true
     for layer, layer_module in zip(layers, layer_modules):
         for name, param in layer_module.named_parameters():
             if not param.requires_grad:
                 warnings.warn(
-                    "Setting required grads for layer: {}, name: {}".format(
-                        layer, name
-                    )
+                    "Setting required grads for layer: {}, name: {}".format(layer, name)
                 )
                 param.requires_grad = True
     return layer_modules
@@ -324,6 +345,27 @@ def _compute_jacobian_sample_wise_grads_per_batch(
         loss_fn,
         inst.layer_modules,
     )
+
+
+def _unflatten_params_factory(
+    param_shapes: Union[List[Tuple[int, ...]], Tuple[Tensor, ...]]
+):
+    """
+    returns a function which is the inverse of `_flatten_params`
+    """
+
+    def _unflatten_params(flattened_params):
+        params = []
+        offset = 0
+        for shape in param_shapes:
+            length = 1
+            for s in shape:
+                length *= s
+            params.append(flattened_params[offset : offset + length].view(shape))
+            offset += length
+        return tuple(params)
+
+    return _unflatten_params
 
 
 def _flatten_params(_params: Tuple[Tensor, ...]) -> Tensor:

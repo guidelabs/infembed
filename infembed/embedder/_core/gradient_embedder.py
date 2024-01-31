@@ -1,4 +1,5 @@
 from typing import Callable, List, Optional, Union
+import warnings
 from infembed.embedder._core.dim_reduct_embedder import PCAEmbedder
 from infembed.embedder._core.embedder_base import EmbedderBase
 from infembed.embedder._utils.common import (
@@ -7,6 +8,9 @@ from infembed.embedder._utils.common import (
     _flatten_sample_wise_grads,
     _progress_bar_constructor,
     _set_active_parameters,
+)
+from infembed.embedder._utils.gradient import (
+    SAMPLEWISE_GRADS_PER_BATCH_SUPPORTED_LAYERS,
 )
 from torch.nn import Module
 from torch.utils.data import DataLoader
@@ -32,7 +36,12 @@ class GradientEmbedder(EmbedderBase):
         Args:
             model (Module): The model used to compute the embeddings.
             layers (list of str, optional): names of modules in which to consider
-                    gradients.  If `None` or not provided, all modules will be used.
+                    gradients.  If `None` or not provided, all modules will be used,
+                    with a caveat.  The modules should not be nested, i.e. if one
+                    module is specified, do not also specify its submodules.  If
+                    `layers` is provided, they should satisfy the constraint. 
+                    If `layers is not provided, the implementation automatically
+                    selects layers which satisfies these constraint.
                     Default: None
             loss_fn (Module or Callable, optional): The loss function used to compute the
                     Hessian.  It should behave like a "reduction" loss function, where
@@ -64,11 +73,13 @@ class GradientEmbedder(EmbedderBase):
             loss_fn, "loss_fn", sample_wise_grads_per_batch
         )
 
-        self.layer_modules = None
-        if not (layers is None):
-            self.layer_modules = _set_active_parameters(model, layers)
-        else:
-            self.layer_modules = list(model.modules())
+        self.layer_modules = _set_active_parameters(
+            model,
+            layers,
+            supported_layers=SAMPLEWISE_GRADS_PER_BATCH_SUPPORTED_LAYERS
+            if sample_wise_grads_per_batch
+            else None,
+        )
 
         self.show_progress = show_progress
 
@@ -109,11 +120,11 @@ class GradientEmbedder(EmbedderBase):
             )
             with torch.no_grad():
                 return _flatten_sample_wise_grads(jacobians).to(device=return_device)
-            
+
         if self.show_progress:
-            logging.info("compute embeddings") 
+            logging.info("compute embeddings")
         return torch.cat([get_batch_embeddings(batch) for batch in dataloader], dim=0)
-    
+
     def save(self, path: str):
         """
         This method saves the results of `fit` to a file.  Note that this
@@ -149,6 +160,7 @@ class PCAGradientEmbedder(PCAEmbedder):
     reduces their dimension using PCA.  This is a wrapper around `PCAEmbedder` which
     uses `GradientEmbedder` as the 'base_embedder'.
     """
+
     def __init__(
         self,
         model: Module,
@@ -180,7 +192,7 @@ class PCAGradientEmbedder(PCAEmbedder):
                     False, `loss_fn` must behave like a `reduction='none'` loss
                     function, i.e. `BCELoss(reduction='none')`.
                     Default: True
-            projection_dim (int, optional):  The dimension of the embeddings that are 
+            projection_dim (int, optional):  The dimension of the embeddings that are
                     computed.
                     Default: 10
             show_progress (bool, optional): Whether to show the progress of

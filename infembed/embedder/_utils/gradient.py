@@ -4,7 +4,13 @@ from infembed.embedder._utils.sample_gradient import SampleGradientWrapper
 from torch import Tensor
 from torch.nn import Module
 import torch
+import torch.nn as nn
 
+
+SAMPLEWISE_GRADS_PER_BATCH_SUPPORTED_LAYERS = [
+    nn.Linear,
+    nn.Conv2d,
+]
 
 def apply_gradient_requirements(
     inputs: Tuple[Tensor, ...], warn: bool = True
@@ -151,7 +157,7 @@ def _compute_jacobian_wrt_params_with_sample_wise_trick(
         return grads
 
 
-def _extract_parameters_from_layers(layer_modules):
+def _extract_parameters_from_layers(layer_modules, check_duplicates=True):
     layer_parameters = []
     if layer_modules is not None:
         layer_parameters = [
@@ -162,14 +168,10 @@ def _extract_parameters_from_layers(layer_modules):
         assert (
             len(layer_parameters) > 0
         ), "No parameters are available for modules for provided input `layers`"
-        # print(layer_modules)
-        # print(len(layer_parameters))
-        # print(len(set(layer_parameters)))
-        # import pdb
-        # pdb.set_trace()
-        assert len(set(layer_parameters)) == len(
-            layer_parameters
-        ), "There are duplicate parameters in which gradients are considered."
+        if check_duplicates:
+            assert len(set(layer_parameters)) == len(
+                layer_parameters
+            ), "There are duplicate parameters in which gradients are considered."
     return layer_parameters
 
 

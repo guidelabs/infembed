@@ -88,10 +88,11 @@ class KFACEmbedder(EmbedderBase):
             model (Module): The model used to compute the embeddings.
             layers (list of str, optional): names of modules in which to consider
                     gradients.  If `None` or not provided, all modules will be used.
-                    There is a caveat: `KFACEmbedder` can only consider gradients
-                    in layers which are `Linear` or `Conv2d`.  Thus regardless of
-                    the modules specified by `layers`, only layers in them which are
-                    of those types will be used for calculating gradients.
+                    There is a caveat: `KFACEmbedder` can only consider gradients in
+                    layers which are `Linear` or `Conv2d`.  If `layers` is provided,
+                    they should satisfy these constraints.  If `layers is not provided,
+                    the implementation automatically selects layers which satisfies
+                    these constraints.
                     Default: None
             loss_fn (Module or Callable, optional): The loss function used to compute the
                     Hessian.  It should behave like a "reduction" loss function, where
@@ -162,15 +163,11 @@ class KFACEmbedder(EmbedderBase):
         else:
             self.test_reduction_type = self.reduction_type
 
-        self.layer_modules = None
-        if not (layers is None):
-            self.layer_modules = _set_active_parameters(
-                model,
-                layers,
-                supported_layers=SUPPORTED_LAYERS,
-            )
-        else:
-            self.layer_modules = list(model.modules())
+        self.layer_modules = _set_active_parameters(
+            model,
+            layers,
+            supported_layers=SUPPORTED_LAYERS
+        )
 
         # below initializations are specific to `KFACEmbedder`
 

@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import logging
 from typing import Callable, List, Optional, Tuple, Union
+import warnings
 from infembed.embedder._core.embedder_base import EmbedderBase
 from infembed.embedder._utils.common import (
     NotFitException,
@@ -15,7 +16,10 @@ from infembed.embedder._utils.common import (
     _set_active_parameters,
     _top_eigen,
 )
-from infembed.embedder._utils.gradient import _extract_parameters_from_layers
+from infembed.embedder._utils.gradient import (
+    SAMPLEWISE_GRADS_PER_BATCH_SUPPORTED_LAYERS,
+    _extract_parameters_from_layers,
+)
 from infembed.embedder._utils.hvp import AutogradHVP
 from torch.nn import Module
 import torch
@@ -138,7 +142,7 @@ def _parameter_arnoldi(
             H[i, k - 1] = _parameter_dot(qs[i], v)
             v = _parameter_add(v, _parameter_multiply(qs[i], -H[i, k - 1]))
         H[k, k - 1] = _parameter_dot(v, v) ** 0.5
-        #logging.info(f"tol, {H[k, k - 1]}")
+        # logging.info(f"tol, {H[k, k - 1]}")
         if H[k, k - 1] < tol:
             break
         qs.append(_parameter_multiply(v, 1.0 / H[k, k - 1]))
@@ -237,6 +241,7 @@ class ArnoldiEmbedder(EmbedderBase):
     Arnoldi iteration to approximate the Hessian without explicitly forming the actual
     Hessian.
     """
+
     def __init__(
         self,
         model: Module,
@@ -252,19 +257,20 @@ class ArnoldiEmbedder(EmbedderBase):
         hessian_inverse_tol: float = 1e-5,
         projection_on_cpu: bool = True,
         show_progress: bool = False,
-        hvp_mode: str = 'vhp',
+        hvp_mode: str = "vhp",
     ):
         """
         Args:
             model (Module): The model used to compute the embeddings.
             layers (list of str, optional): names of modules in which to consider
                     gradients.  If `None` or not provided, all modules will be used.
-                    There is a caveat: `KFACEmbedder` can only consider gradients
-                    in layers which are `Linear` or `Conv2d`.  Thus regardless of
-                    the modules specified by `layers`, only layers in them which are
-                    of those types will be used for calculating gradients.  The modules
-                    should not be nested, i.e. if one module is specified, do not
-                    also specify its submodules.
+                    There is a caveat: the modules should not be nested, i.e. if one
+                    module is specified, do not also specify its submodules.  Also, if
+                    `samplewise_grads_per_batch` is True, `ArnoldiEmbedder` can only
+                    consider gradients in layers which are `Linear` or `Conv2d`.  If
+                    `layers` is provided, they should satisfy these constraints.  If
+                    `layers is not provided, the implementation automatically selects
+                    layers which satisfies these constraints.
                     Default: `None`
             loss_fn (Module or Callable, optional): The loss function used to compute the
                     Hessian.  It should behave like a "reduction" loss function, where
@@ -355,15 +361,14 @@ class ArnoldiEmbedder(EmbedderBase):
         else:
             self.test_reduction_type = self.reduction_type
 
-        self.layer_modules = None
-        if not (layers is None):
-            # TODO: should let `self.layer_modules` only contain supported layers
-            self.layer_modules = _set_active_parameters(model, layers)
-        else:
-            # only use supported layers.  TODO: add warning that some layers are not supported
-            self.layer_modules = list(model.modules())
+        self.layer_modules = _set_active_parameters(
+            model,
+            layers,
+            supported_layers=SAMPLEWISE_GRADS_PER_BATCH_SUPPORTED_LAYERS
+            if sample_wise_grads_per_batch
+            else None,
+        )
 
-        # below initializations are specific to `ArnoldiEmbedder`
         self.projection_dim = projection_dim
 
         torch.manual_seed(seed)  # for reproducibility
@@ -566,10 +571,20 @@ class ArnoldiEmbedder(EmbedderBase):
             def get_batch_coordinate(params):
                 batch_coordinate = 0
                 for _jacobians, param in zip(jacobians, params):
+                    if not isinstance(jacobians, tuple):
+                        import pdb
+
+                        pdb.set_trace()
                     batch_coordinate += torch.sum(
                         _jacobians * param.to(device=self.model_device).unsqueeze(0),
                         dim=tuple(range(1, len(_jacobians.shape))),
                     )
+                try:
+                    batch_coordinate.to(device=return_device)
+                except:
+                    import pdb
+
+                    pdb.set_trace()
                 return batch_coordinate.to(device=return_device)
 
             # to get the embedding for the batch, we get the coordinates for the batch

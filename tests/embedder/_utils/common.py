@@ -15,6 +15,7 @@ class EmbedderConstructor:
     related arguments.  In practice it just means arguments not related to them
     are stored, i.e. acts like a `functools.partial`.
     """
+
     def __init__(self, constructor, name: Optional[str] = None, **kwargs):
         self._constructor = functools.partial(constructor, **kwargs)
         self.kwargs = kwargs
@@ -22,13 +23,13 @@ class EmbedderConstructor:
 
     def _default_name(self):
         return f"{self._constructor.func.__name__}_{self.kwargs}"
-    
+
     def __repr__(self):
         return self.name
-    
+
     def __call__(self, model: Module, **kwargs):
         return self._constructor(model=model, **kwargs)
-    
+
 
 def _test_compare_implementations(
     test,
@@ -75,7 +76,9 @@ def _test_compare_implementations(
 
     # compute pairwise dot-products for both implementations' embeddings
     test_dataloader = _format_inputs_dataset(
-        (test_samples, test_labels) if not unpack_inputs else (*test_samples, test_labels)
+        (test_samples, test_labels)
+        if not unpack_inputs
+        else (*test_samples, test_labels)
     )
     embeddings_1 = embedder_1.predict(test_dataloader)
     embeddings_2 = embedder_2.predict(test_dataloader)
@@ -84,7 +87,7 @@ def _test_compare_implementations(
     influences_2 = embeddings_2 @ embeddings_2.T
 
     assertTensorAlmostEqual(test, influences_1, influences_2, delta=delta, mode="sum")
-        
+
 
 def _move_sample_to_cuda(samples):
     return [s.cuda() for s in samples]
@@ -128,13 +131,24 @@ class UnpackDataset(Dataset):
         are: [sample_0, sample_1, ...] + [labels] (two lists concacenated).
         """
         return [lst[idx] for lst in self.samples] + [self.labels[idx]]
-    
+
 
 class BasicLinearNet(nn.Module):
     def __init__(self, in_features, hidden_nodes, out_features) -> None:
         super().__init__()
         self.linear1 = nn.Linear(in_features, hidden_nodes)
         self.linear2 = nn.Linear(hidden_nodes, out_features)
+
+    def forward(self, input):
+        x = torch.tanh(self.linear1(input))
+        return torch.tanh(self.linear2(x))
+
+
+class BasicLinearNetWithSubmodule(nn.Module):
+    def __init__(self, in_features, hidden_nodes, out_features) -> None:
+        super().__init__()
+        self.linear1 = LinearWithSubmodule(in_features, hidden_nodes)
+        self.linear2 = LinearWithSubmodule(hidden_nodes, out_features)
 
     def forward(self, input):
         x = torch.tanh(self.linear1(input))
@@ -158,7 +172,26 @@ class MultLinearNet(nn.Module):
         inputs = self.pre(torch.cat(inputs, dim=-1))
         x = torch.tanh(self.linear1(inputs))
         return torch.tanh(self.linear2(x))
-    
+
+
+class MultLinearNetWithSubmodule(nn.Module):
+    def __init__(self, in_features, hidden_nodes, out_features, num_inputs) -> None:
+        super().__init__()
+        self.pre = nn.Linear(in_features * num_inputs, in_features)
+        self.linear1 = LinearWithSubmodule(in_features, hidden_nodes)
+        self.linear2 = LinearWithSubmodule(hidden_nodes, out_features)
+
+    def forward(self, *inputs):
+        """
+        The signature of inputs is List[torch.Tensor],
+        where torch.Tensor has the dimensions [num_inputs x in_features].
+        It first concacenates the list and a linear layer to reduce the
+        dimension.
+        """
+        inputs = self.pre(torch.cat(inputs, dim=-1))
+        x = torch.tanh(self.linear1(inputs))
+        return torch.tanh(self.linear2(x))
+
 
 class LinearWithConv2dNet(nn.Module):
     """
@@ -200,7 +233,7 @@ class MultLinearWithConv2dNet(nn.Module):
         x = self.conv(x)  # 1, 2, 2
         x = x.view(-1, 4)  # 4
         return torch.tanh(self.linear2(x))
-    
+
 
 class Linear(nn.Module):
     """
@@ -219,6 +252,38 @@ class Linear(nn.Module):
         return self.linear(input)
 
 
+class LinearWithSubmodule(nn.Module):
+    """
+    this module has the same input / output as `Linear`, but has 2 submodules.  this
+    lets us specify the use of gradients within just one of the submodules, or the
+    entire module, which comes up in practice and we want to test.
+    """
+
+    def __init__(self, in_features, out_features=1):
+        super().__init__()
+        assert in_features >= 2
+        self.in_features1 = int(in_features / 2)
+        self.in_features2 = in_features - self.in_features1
+        self.linear1 = nn.Linear(self.in_features1, out_features)
+        self.linear2 = nn.Linear(self.in_features2, out_features)
+        self.out_features = out_features
+
+    def forward(self, input):
+        ans = torch.sum(
+            torch.stack(
+                [
+                    self.linear1(input[..., : self.in_features1]),
+                    self.linear2(input[..., self.in_features1 :]),
+                ],
+                dim=-1,
+            ),
+            dim=-1,
+        )
+        import pdb
+        #pdb.set_trace()
+        return ans
+
+
 class UnpackLinear(nn.Module):
     """
     the analogue of `Linear` which unpacks inputs, serving the same purpose.
@@ -230,13 +295,13 @@ class UnpackLinear(nn.Module):
 
     def forward(self, *inputs):
         return self.linear(torch.cat(inputs, dim=1))
-    
+
 
 def _wrap_model_in_dataparallel(net):
     alt_device_ids = [0] + [x for x in range(torch.cuda.device_count() - 1, 0, -1)]
     net = net.cuda()
     return torch.nn.DataParallel(net, device_ids=alt_device_ids)
-        
+
 
 def get_random_model_and_data(
     unpack_inputs,
@@ -274,6 +339,8 @@ def get_random_model_and_data(
     - `model_type='conv'`: linear model with `Conv2D` layer in the middle.
     - `model_type='seq'`: input is 3D
     - `model_type='one_layer_linear'`: 1-layer linear model
+    - `model_type='two_layer_with_submodule'`: 2-layer model whose layers use
+    submodules
 
     `use_gpu` can either be
     - `False`: returned model is on cpu
@@ -282,7 +349,7 @@ def get_random_model_and_data(
     The need to differentiate between `'cuda'` and `'cuda_data_parallel'` is that sometimes
     we may want to test a model that is on cpu, but is *not* wrapped in `DataParallel`.
     """
-    torch.manual_seed(42) # TODO: find seed for which get nans
+    torch.manual_seed(42)  # TODO: find seed for which get nans
 
     in_features, hidden_nodes = 5, 4
     num_inputs = 2
@@ -366,7 +433,7 @@ def get_random_model_and_data(
             else (net.to(device="cuda") if use_gpu == "cuda" else net)
         )
 
-    elif model_type in ["conv", "seq", "one_layer_linear"]:
+    elif model_type in ["conv", "seq", "one_layer_linear", "two_layer_with_submodule"]:
         if model_type == "conv":
             net = (
                 LinearWithConv2dNet(in_features, out_features)
@@ -384,6 +451,14 @@ def get_random_model_and_data(
                 Linear(in_features, out_features)
                 if not unpack_inputs
                 else UnpackLinear(in_features, out_features, num_inputs)
+            ).double()
+        elif model_type == "two_layer_with_submodule":
+            net = (
+                BasicLinearNetWithSubmodule(in_features, hidden_nodes, out_features)
+                if not unpack_inputs
+                else MultLinearNetWithSubmodule(
+                    in_features, hidden_nodes, out_features, num_inputs
+                )
             ).double()
 
         net_adjusted = (
@@ -493,6 +568,6 @@ USE_GPU_LIST = (
     [False, "cuda"]
     if torch.cuda.is_available() and torch.cuda.device_count() != 0
     else [False]
-) 
+)
 # in theory, can also include 'cuda_data_parallel, but all implementations of
 # `EmbedderBase` do not support `DataParallel`.  TODO: support it.
