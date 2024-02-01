@@ -4,6 +4,7 @@ defaults:
   - model: resnet18
   - test_dataloader: imagenet
   - train_dataloader: imagenet
+  - loss: crossentropy
   - _self_
 hydra:
   run:
