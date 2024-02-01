@@ -1,0 +1,58 @@
+[project]
+name = "infembed"
+description = "Find inputs that cause your model to make a mistake."
+authors = [{name = "Guide Labs"}]
+dynamic = ["version", "readme", "dependencies", "optional-dependencies"]
+requires-python = ">=3.9"
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.in"]}
+readme = {file = "README.md"}
+
+[tool.setuptools.dynamic.optional-dependencies]
+dev = {file = ["requirements-dev.in"]}
+local = {file = ["requirements-local.in"]}
+
+[tool.setuptools.packages.find]
+where = ["infembed"]
+
+[tool.mypy]
+show_error_codes = true
+warn_unused_ignores = true
+no_implicit_optional = true
+warn_redundant_casts = true
+strict_equality = true
+warn_unreachable = true
+plugins = ["numpy.typing.mypy_plugin"]
+
+[[tool.mypy.overrides]]
+module = [
+    "matplotlib.*",
+    "pandas.*",
+    "scipy.*",
+    "seaborn",
+    "sklearn.*",
+    "tqdm.*",
+    "transformers.*",
+]
+
+ignore_missing_imports = true
+
+[build-system]
+requires = ["setuptools >= 65", "setuptools_scm[toml]>=6.2"]
+build-backend = 'setuptools.build_meta'
+
+[tool.setuptools_scm]
+search_parent_directories = true
+version_scheme = "no-guess-dev"
+local_scheme = "node-and-date"
+
+[tool.ruff]
+line-length = 100
+
+select = [
+   "E", # pycodestyle
+   "F", # pyflakes
+   "I", # isort
+   "UP", # pyupgrade
+]

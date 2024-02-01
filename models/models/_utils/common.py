@@ -12,6 +12,7 @@ def load_model(
     checkpoints_load_func: Optional[Callable] = None,
     checkpoint: Optional[str] = None,
     device: str = "cpu",
+    eval: bool = True,
 ):
     """
     loads model checkpoint if provided, moves to specified device
@@ -19,6 +20,10 @@ def load_model(
     if checkpoints_load_func is not None:
         checkpoints_load_func(model, checkpoint)
     model.to(device=device)
+    if eval:
+        model.eval()
+    else:
+        model.train()
     return model
 
 

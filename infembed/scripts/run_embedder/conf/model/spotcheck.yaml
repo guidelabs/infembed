@@ -4,4 +4,4 @@ model:
   device: ${train_dataloader.device}
 layers:
   - 'fc'
-  - 'layer4.1.conv2'
+#  - 'layer4.1.conv2'
