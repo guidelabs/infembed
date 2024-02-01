@@ -1,0 +1,6 @@
+_target_: infembed.embedder._core.fast_kfac_embedder.FastKFACEmbedder
+_partial_: true
+projection_dim: 100
+per_layer_blocks: 1
+sample_wise_grads_per_batch: true
+show_progress: true

@@ -1,0 +1,5 @@
+_target_: data.data._core.agnews.agnews_dataloader
+split: train
+device: 'cuda:1'
+batch_size: 32
+shuffle: true

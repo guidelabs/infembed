@@ -1,0 +1,12 @@
+model:
+  _target_: models.models._utils.common.load_model
+  model: 
+    _target_: models.models._utils.common.HuggingfaceWrapperModel
+    model:
+      _target_: 'transformers.BertForSequenceClassification.from_pretrained'
+      pretrained_model_name_or_path: 'fabriceyhc/bert-base-uncased-ag_news'
+  device: 'cuda:1'
+  eval: true
+layers:
+  - 'model.classifier'
+  - model.bert.encoder.layer.11
