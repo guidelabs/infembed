@@ -3,7 +3,7 @@ dataset:
   _target_: 'data._utils.common.RandomSubset'
   dataset:
     _target_: torchvision.datasets.ImageNet
-    root: '/home/ubuntu/Documents/infembed/data/files/imagenet'
+    root: '/home/ubuntu/Documents/infembed/files/imagenet'
     split: 'val'
   num: 50000
 collate_fn: 
