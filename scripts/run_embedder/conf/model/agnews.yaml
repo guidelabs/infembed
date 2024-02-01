@@ -1,7 +1,7 @@
 model:
-  _target_: models.models._utils.common.load_model
+  _target_: models._utils.common.load_model
   model: 
-    _target_: models.models._utils.common.HuggingfaceWrapperModel
+    _target_: models._utils.common.HuggingfaceWrapperModel
     model:
       _target_: 'transformers.BertForSequenceClassification.from_pretrained'
       pretrained_model_name_or_path: 'fabriceyhc/bert-base-uncased-ag_news'
