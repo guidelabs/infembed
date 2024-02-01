@@ -1,1 +1,1 @@
-_target_: models.models._utils.common.HuggingfaceLoss
+_target_: models._utils.common.HuggingfaceLoss
