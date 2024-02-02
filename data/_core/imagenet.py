@@ -5,15 +5,16 @@ from torch.utils.data import default_collate
 normalize = ResNet18_Weights.IMAGENET1K_V1.transforms()
 
 
-def get_collate_fn(device):
-    def collate_fn(examples):
+class ImagenetCollateFn:
+    def __init__(self, device):
+        self.device = device
+
+    def __call__(self, examples):
         return tuple(
             [
-                _x.to(device=device)
+                _x.to(device=self.device)
                 for _x in default_collate(
                     [(normalize(__x[0]), __x[1]) for __x in examples]
                 )
             ]
         )
-
-    return collate_fn

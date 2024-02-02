@@ -35,3 +35,7 @@ class AGNewsCollateFn:
         _batch = self._collate_fn(examples)
         _batch = {key:val.to(device=self.device) for (key, val) in _batch.items()}
         return (_batch, _batch)
+    
+
+def get_target(batch):
+    return batch['labels']

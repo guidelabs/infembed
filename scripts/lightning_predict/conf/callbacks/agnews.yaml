@@ -1,0 +1,6 @@
+- _target_: helpers.TorchMetricsCallback
+  metrics:
+    accuracy: torchmetrics.Accuracy
+  get_preds: model._core.agnews.get_preds
+  get_target: data._core.agnews.get_target
+  write_path: 'metrics.csv'

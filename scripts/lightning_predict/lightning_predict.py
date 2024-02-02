@@ -1,3 +1,4 @@
+#import lightning as L
 import pytorch_lightning as pl
 from omegaconf import DictConfig
 import hydra
@@ -20,7 +21,7 @@ def run(cfg: DictConfig):
         callbacks=instantiate(cfg.callbacks), **instantiate(cfg.trainer_kwargs)
     )
 
-    trainer.fit(model=instantiate(cfg.model), datamodule=instantiate(cfg.datamodule))
+    trainer.predict(model=instantiate(cfg.model), dataloaders=instantiate(cfg.dataloader))
 
 
 if __name__ == "__main__":

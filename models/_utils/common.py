@@ -3,8 +3,15 @@ import torch
 import torch.nn as nn
 
 
-def default_checkpoints_load_func(model, path):
-    model.load_state_dict(torch.load(open(path, "rb")))
+def default_checkpoints_load_func(model, path, key=None):
+    state = torch.load(open(path, "rb"))
+    state_dict = state if key is None else state[key]
+    model.load_state_dict(state_dict)
+
+
+def lightning_checkpoints_load_func(model, path):
+    raise NotImplementedError
+    model.load_from_checkpoint(path)
 
 
 def load_model(
@@ -18,7 +25,7 @@ def load_model(
     loads model checkpoint if provided, moves to specified device
     """
     if checkpoints_load_func is not None:
-        checkpoints_load_func(model, checkpoint)
+        checkpoints_load_func(model=model, path=checkpoint)
     model.to(device=device)
     if eval:
         model.eval()
