@@ -1,6 +1,8 @@
 from typing import Callable, Optional
+from data._utils.common import default_batch_to_target, default_batch_to_x
 import torch
 import torch.nn as nn
+import pytorch_lightning as pl
 
 
 def default_checkpoints_load_func(model, path, key=None):
@@ -58,7 +60,8 @@ class HuggingfaceLoss(nn.Module):
 def init_linear(m):
     if isinstance(m, (nn.Conv2d, nn.Linear)):
         nn.init.kaiming_normal_(m.weight)
-        if m.bias is not None: nn.init.zeros_(m.bias)
+        if m.bias is not None:
+            nn.init.zeros_(m.bias)
 
 
 def get_all_parameters(model):
@@ -67,7 +70,68 @@ def get_all_parameters(model):
 
 class GenericConfigureOptimizers:
     def __init__(self, parameters_getter, optimizer_constructor):
-        self.parameters_getter, self.optimizer_constructor = parameters_getter, optimizer_constructor
+        self.parameters_getter, self.optimizer_constructor = (
+            parameters_getter,
+            optimizer_constructor,
+        )
 
     def __call__(self, model):
         return self.optimizer_constructor(self.parameters_getter(model=model))
+
+
+class GenericLightningModel(pl.LightningModule):
+    """
+    the most basic pl wrapper whose purpose is just to train.  doesn't log anything
+    besides loss
+    """
+
+    def __init__(
+        self,
+        model: nn.Module,
+        loss_fn: Callable,
+        configure_optimizers=None,
+        batch_to_x: Callable = default_batch_to_x,
+        batch_to_target: Callable = default_batch_to_target,
+    ):
+        super().__init__()
+        self.model, self.loss_fn = model, loss_fn
+        self._configure_optimizers = configure_optimizers
+        self.batch_to_x = batch_to_x
+        self.batch_to_target = batch_to_target
+
+    def configure_optimizers(self):
+        if self._configure_optimizers is not None:
+            return self._configure_optimizers(self)
+        return torch.optim.Adam(self.parameters(), lr=self.lr)
+
+    def forward(self, x):
+        return self.model(*x)
+
+    def _step(self, batch, batch_idx):
+        # run forward
+        x = self.batch_to_x(batch)
+        y = self.batch_to_y(batch)
+        y_hat = self.forward(x)
+        loss = self.loss_fn(y_hat, y)
+        return {"loss": loss}
+
+    def training_step(self, batch, batch_idx):
+        d = self._step(batch, batch_idx)
+        self.log_dict(
+            {f"train_{key}": val for (key, val) in d.items() if key[0] != "_"}
+        )
+        return d
+
+    def validation_step(self, batch, batch_idx):
+        d = self._step(batch, batch_idx)
+        self.log_dict(
+            {f"validation_{key}": val for (key, val) in d.items() if key[0] != "_"}
+        )
+        return d
+
+    def prediction_step(self, batch, batch_idx):
+        d = self._step(batch, batch_idx)
+        self.log_dict(
+            {f"prediction_{key}": val for (key, val) in d.items() if key[0] != "_"}
+        )
+        return d

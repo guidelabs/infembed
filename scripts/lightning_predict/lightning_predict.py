@@ -4,6 +4,7 @@ from omegaconf import DictConfig
 import hydra
 from hydra.utils import instantiate
 import wandb
+import torch
 
 
 WANDB_CONFIG_NAME = 'wandb'
@@ -25,4 +26,5 @@ def run(cfg: DictConfig):
 
 
 if __name__ == "__main__":
+    torch.multiprocessing.set_start_method('spawn')
     run()

@@ -59,3 +59,23 @@ class GenericDataModule(L.LightningDataModule):
 
     def predict_dataloader(self):
         return self._predict_dataloader
+    
+
+def default_batch_to_x(batch):
+    return batch[:-1]
+
+
+def default_batch_to_target(batch):
+    return batch[-1]
+
+
+def keep_pre(x):
+    return x[:-1]
+
+
+class ComposeCollateFn:
+    def __init__(self, f, g):
+        self.f, self.g = f, g
+
+    def __call__(self, x):
+        return self.f(self.g(x))

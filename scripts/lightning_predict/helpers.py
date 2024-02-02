@@ -57,7 +57,7 @@ class BatchEndWriter(BasePredictionWriter):
     """
     takes extractor functions of the batch or predictions and writes them to file
     """
-    def __init__(self, batch_extractors_d: Dict, prediction_extractors_d: Dict):
+    def __init__(self, batch_extractors_d: Dict = {}, prediction_extractors_d: Dict = {}):
         super().__init__(write_interval='batch')
         self.batch_extractors_d = batch_extractors_d
         self.prediction_extractors_d = prediction_extractors_d
