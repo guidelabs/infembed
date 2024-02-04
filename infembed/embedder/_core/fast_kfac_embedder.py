@@ -276,12 +276,15 @@ class FastKFACEmbedder(EmbedderBase):
             torch.device("cpu") if projection_on_cpu else self.model_device
         )
 
-        # logging.info("compute factors")
+        logging.info("compute factors")
+        # import pdb
+        # pdb.set_trace()
         for k, (layer_A, layer_S, layer) in enumerate(
             zip(layer_As, layer_Ss, self.layer_modules)
         ):
             logging.info(f"compute factors for layer {layer}")
-
+            # import pdb
+            # pdb.set_trace()
             R_A_factors = []
             R_S_factors = []
             R_ls = []

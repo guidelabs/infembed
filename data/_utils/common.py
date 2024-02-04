@@ -96,3 +96,75 @@ class TokenizerCollateFn:
         if self.add_labels:
             output['labels'] = output['input_ids']
         return output if not self.duplicate else (output, output)
+    
+
+def subsequent_mask(size):
+    # returns 2D
+    return torch.triu(torch.ones(size, size), diagonal=1) == 0
+
+
+class DecoderLLMCollateFn:
+    """
+    everything specific to the decoder setting is handled here
+    the batch should contain: input_ids, labels, attention_mask, mask
+    """
+
+    def __init__(self, tokenizer, max_len):
+        tokenizer.pad_token = tokenizer.eos_token  # a HACK
+        self.tokenizer, self.max_len = tokenizer, max_len
+
+    def __call__(self, texts):
+        # this is the unshifted text
+        d = self.tokenizer(texts, return_tensors='pt', padding=True, truncation=True)
+        # truncate if needed
+        if d["input_ids"].shape[1] > self.max_len:
+            end_pos = self.max_len
+        else:
+            end_pos = None
+        d["input_ids"] = d["input_ids"][:, :end_pos]
+        d["attention_mask"] = d["attention_mask"][:, :end_pos]
+        # the input to model is shifted
+        shifted_input_ids = torch.cat(
+            [
+                torch.ones(len(texts), 1) * self.tokenizer.bos_token_id,
+                d["input_ids"][:, :-1],
+            ],
+            dim=1,
+        )
+        # create the mask used for generation during training. it's the same for each example, so is 2D
+        mask = subsequent_mask(shifted_input_ids.shape[1])
+        return {
+            "labels": d["input_ids"],
+            "attention_mask": d["attention_mask"],
+            "input_ids": shifted_input_ids.to(dtype=int),
+            "mask": mask,
+        }
+    
+
+class DatasetFromText(IterableDataset):
+    """
+    takes in raw text, splits into chunks constituting different elements of a dataset
+    """
+
+    def __init__(self, path, text_size):
+        self.path, self.text_size = path, text_size
+
+    def __iter__(self):
+        t = ""
+        for line in open(self.path, "r"):
+            t += line
+            if len(t) > self.text_size:
+                yield t[: self.text_size]
+                t = t[self.text_size :]
+
+
+class EmptyTextDataset(IterableDataset):
+    """
+    yields empty text for use in prediction step, to generate text from nothing
+    """
+    def __init__(self, num_examples):
+        self.num_examples = num_examples
+
+    def __iter__(self):
+        for _ in range(self.num_examples):
+            yield ''

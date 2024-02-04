@@ -1,9 +1,10 @@
-import pytorch_lightning as pl
+# import pytorch_lightning as pl
 from omegaconf import DictConfig
 import hydra
 from hydra.utils import instantiate
 import wandb
-
+# import lightning.pytorch as L
+import lightning as L
 
 WANDB_CONFIG_NAME = 'wandb'
 
@@ -16,7 +17,7 @@ def run(cfg: DictConfig):
     if use_wandb:
         wandb.init(project=cfg['wandb']['project'])
 
-    trainer = pl.Trainer(
+    trainer = L.Trainer(
         callbacks=instantiate(cfg.callbacks), **instantiate(cfg.trainer_kwargs)
     )
 

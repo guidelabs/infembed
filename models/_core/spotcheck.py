@@ -3,7 +3,8 @@ import torch
 from models._utils.common import init_linear
 import torchvision
 import torch.nn.functional as F
-import pytorch_lightning as pl
+# import pytorch_lightning as pl
+import lightning as L
 #import pytorch.lightning as pl
 
 
@@ -16,7 +17,7 @@ def get_spotcheck_model(checkpoint_path, device):
     return model
 
 
-class SpotcheckLightningModule(pl.LightningModule):
+class SpotcheckLightningModule(L.LightningModule):
 
     def __init__(self, configure_optimizers=None):
         super().__init__()
@@ -30,10 +31,10 @@ class SpotcheckLightningModule(pl.LightningModule):
             self._configure_optimizers(self)
         # return torch.optim.Adam(self.parameters(), lr=self.lr)
     
-    def forward(self, batch):
+    def forward(self, x):
         # import pdb
         # pdb.set_trace()
-        x, y = batch
+        # x, y = batch
         return self.model(x)
         
     def _step(self, batch, batch_idx):
