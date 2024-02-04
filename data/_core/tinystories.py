@@ -1,5 +1,5 @@
 from torch.utils.data import IterableDataset
-from data._utils.llm_collate_fns import TokenizerCollateFn
+from data._utils.common import TokenizerCollateFn
 
 
 class TinyStoriesDataset(IterableDataset):
