@@ -27,7 +27,7 @@ import torch.nn as nn
 
 @dataclass
 class KFACEmbedderFitResults:
-    layer_Rs: Tensor
+    layer_Rs: List[Tensor]
 
 
 SUPPORTED_LAYERS = [nn.Linear, nn.Conv2d]
@@ -234,17 +234,22 @@ class KFACEmbedder(EmbedderBase):
                 self.reduction_type,
                 self.loss_fn,
                 show_progress,
+                accumulate_device=None,
             )
-            layer_hessians_flattened = [
-                # assuming each layer accumulator only has 1 element, i.e. not doing any
-                # additional block-wise approximation of the Hessian in a layer, hence the
-                # `[0]`
-                torch.kron(
-                    layer_accumulator.layer_A_accumulators[0].results(),
-                    layer_accumulator.layer_S_accumulators[0].results(),
-                )
-                for layer_accumulator in layer_accumulators
-            ]
+            try:
+                layer_hessians_flattened = [
+                    # assuming each layer accumulator only has 1 element, i.e. not doing any
+                    # additional block-wise approximation of the Hessian in a layer, hence the
+                    # `[0]`
+                    torch.kron(
+                        layer_accumulator.layer_A_accumulators[0].results(),
+                        layer_accumulator.layer_S_accumulators[0].results(),
+                    )
+                    for layer_accumulator in layer_accumulators
+                ]
+            except:
+                import pdb
+                pdb.set_trace()
 
         else:
             layer_accumulators = [
@@ -373,16 +378,23 @@ class KFACEmbedder(EmbedderBase):
         with open(path, "wb") as f:
             pickle.dump(self.fit_results, f)
 
-    def load(self, path: str):
+    def load(self, path: str, projection_on_cpu: bool = True):
         """
         Loads the results saved by the `save` method.  Instead of calling `fit`, one
         can instead call `load`.
 
         Args:
             path (str): path of file to load results from.
+            projection_on_cpu (bool, optional): whether to load the results onto cpu.
+                    results will not be moved onto gpu if model is not on gpu.
+                    Default: True
         """
         with open(path, "rb") as f:
             self.fit_results = pickle.load(f)
+        projection_device = (
+            torch.device("cpu") if projection_on_cpu else self.model_device
+        )
+        self.fit_results.layer_Rs = [layer_R.to(device=projection_device) for layer_R in self.fit_results.layer_Rs]
 
     def reset(self):
         """

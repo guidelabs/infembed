@@ -1,7 +1,5 @@
 _target_: infembed.embedder._core.fast_kfac_embedder.FastKFACEmbedder
 _partial_: true
-loss_fn:
-  _target_: models._utils.common.HuggingfaceLoss
 projection_dim: 25
 per_layer_blocks: 5
 sample_wise_grads_per_batch: true

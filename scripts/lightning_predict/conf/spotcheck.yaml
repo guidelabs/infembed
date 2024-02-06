@@ -1,0 +1,11 @@
+defaults:
+  - callbacks: spotcheck
+  - dataloader: spotcheck
+  - model: spotcheck
+  - trainer_kwargs: standard
+  - _self_
+hydra:
+  run:
+#    dir: outputs/fast_kfac
+    dir: /home/ubuntu/Documents/infembed/examples/spotcheck/hydra_outputs/lightning_predict/test
+#    dir: outputs/spotcheck/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}

@@ -3,10 +3,10 @@ dataset:
   _target_: data._utils.common.LimitIterableDataset
   dataset: 
     _target_: data._core.tinystories.TinyStoriesDataset
-    data_path: '/home/ubuntu/Documents/infembed/data/files/tinystories/TinyStoriesV2-GPT4-valid.txt'
+    data_path: '/home/ubuntu/Documents/infembed/files/tinystories/TinyStoriesV2-GPT4-valid.txt'
   num: 5000
 collate_fn:
   _target_: data._core.tinystories.TinyStoriesCollateFn
   duplicate: true
-  device: 'cuda:1'
+  device: ${model.model.device}
 batch_size: 4

@@ -15,6 +15,7 @@ def run_embedder(
     layers: List[str],
     train_dataloader: Optional[DataLoader],
     test_dataloader: DataLoader,
+    loss_fn: Callable,
     embeddings_path: str = "embeddings.pt",
     fit_results_path: Optional[str] = None,
     load_fit_results: bool = False,
@@ -31,6 +32,7 @@ def run_embedder(
                 should yield batches on the correct device.
         test_dataloader (DataLoader): Dataloader provided to `predict`.  It should
                 yield batches on the correct device.
+        loss_fn (Callable): loss used for computing influence.
         embeddings_path (str): Where to save the computed embeddings.  It can
                 either be a relative (to the working directory) path, or absolute path.
         fit_results_path (str, optional): Where the `save` will save and `load` will
@@ -40,7 +42,7 @@ def run_embedder(
         wrapper_embedder_constructor (Callable, optional): Constructor whose arguments
                 are just the embedder constructed from `embedder_constructor`.
     """
-    embedder = embedder_constructor(model=model, layers=layers)
+    embedder = embedder_constructor(model=model, layers=layers, loss_fn=loss_fn)
     if wrapper_embedder_constructor is not None:
         embedder = wrapper_embedder_constructor(base_embedder=embedder)
     if not load_fit_results:
@@ -78,6 +80,7 @@ def run(cfg: DictConfig):
         OmegaConf.to_container(cfg.model.layers, resolve=True),
         instantiate(cfg.train_dataloader) if cfg.train_dataloader is not None else None,
         instantiate(cfg.test_dataloader),
+        instantiate(cfg.loss),
         cfg.io.embeddings_path,
         cfg.io.fit_results_path,
         cfg.io.load_fit_results,
@@ -86,4 +89,5 @@ def run(cfg: DictConfig):
 
 
 if __name__ == "__main__":
+    torch.multiprocessing.set_start_method('spawn')
     run()

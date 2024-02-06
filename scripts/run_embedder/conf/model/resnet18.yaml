@@ -5,10 +5,11 @@ model:
     # weights:
     #   _target_: torchvision.models.ResNet18_Weights.DEFAULT
   device: 'cuda:0'
+  eval: true
 layers:
   - "fc"
   - "layer4.0.conv1"
   - "layer4.0.conv2"
-  - "layer4.0.downsample.0"
+  # - "layer4.0.downsample.0"
   - "layer4.1.conv1"
   - "layer4.1.conv2"

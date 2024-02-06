@@ -1,0 +1,6 @@
+_target_: data._core.agnews.agnews_dataloader
+split: test
+device: 'cuda:1'
+batch_size: 32
+shuffle: false
+num_workers: 10
