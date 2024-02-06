@@ -25,7 +25,12 @@ class _LayerCaptureInput:
     def __call__(
         self, module: nn.Module, input: Tuple[Tensor, ...], output: Tuple[Tensor, ...]
     ):
-        self.input = tuple(_input.detach().to(device=self.device) for _input in input)
+        if self.device is not None:
+            self.input = tuple(_input.detach() for _input in input)
+        else:
+            self.input = tuple(
+                _input.detach().to(device=self.device) for _input in input
+            )
 
 
 class _LayerCaptureOutputGradient:
@@ -44,10 +49,15 @@ class _LayerCaptureOutputGradient:
         input_gradient: Tuple[Tensor, ...],
         output_gradient: Tuple[Tensor, ...],
     ):
-        self.output_gradient = tuple(
-            _output_gradient.detach().to(device=self.device)
-            for _output_gradient in output_gradient
-        )
+        if self.device is not None:
+            self.output_gradient = tuple(
+                _output_gradient.detach().to(device=self.device)
+                for _output_gradient in output_gradient
+            )
+        else:
+            self.output_gradient = tuple(
+                _output_gradient.detach() for _output_gradient in output_gradient
+            )
 
 
 class _RunningAverage:
@@ -68,9 +78,20 @@ class _RunningAverage:
             self.val = val
             self.num_samples = num_samples
         else:
-            self.val = ((val * num_samples) + (self.val * self.num_samples)) / (
-                num_samples + self.num_samples
-            )
+            if False:
+                if True:
+                    a = self.val.clone()
+                    a += val * (num_samples / self.num_samples)
+                    a /= (num_samples + self.num_samples) / self.num_samples
+
+                if True:
+                    b = self.val.clone()
+                    b = ((val * num_samples) + (self.val * self.num_samples)) / (
+                        num_samples + self.num_samples
+                    )
+                assert (a - b).abs().sum() < 1e-2
+            self.val += val * (num_samples / self.num_samples)
+            self.val /= (num_samples + self.num_samples) / self.num_samples
             self.num_samples = num_samples + self.num_samples
 
     def results(self):
