@@ -67,7 +67,6 @@ class FastKFACEmbedder(EmbedderBase):
         layers: Optional[List[str]] = None,
         loss_fn: Optional[Union[Module, Callable]] = None,
         test_loss_fn: Optional[Union[Module, Callable]] = None,
-        sample_wise_grads_per_batch: bool = False,
         projection_dim: Optional[int] = 50,
         layer_block_projection_dim: Optional[int] = None,
         seed: int = 0,
@@ -91,23 +90,15 @@ class FastKFACEmbedder(EmbedderBase):
                     Default: None
             loss_fn (Module or Callable, optional): The loss function used to compute the
                     Hessian.  It should behave like a "reduction" loss function, where
-                    reduction is either 'sum', 'mean', or 'none', and have a
+                    reduction is either 'sum', or 'mean', and have a
                     `reduction` attribute.  For example, `BCELoss(reduction='sum')`
-                    could be a valid loss function.  See the caveat under the
-                    description for the `sample_wise_grads_per_batch` argument.  If None,
-                    the loss is the output of `model`, which is assumed to be a single
-                    scalar for a batch.
+                    could be a valid loss function, but `BCELoss(reduction='none')` is
+                    not valid.  If None, the loss is the output of `model`, which is
+                    assumed to be a single scalar for a batch.
                     Default: None
             test_loss_fn: (Module or callable, optional): The loss function used to compute
                     the 'influence explanations'.  This argument should not matter for
                     most use cases.  If None, is assumed to be the same as `loss_fn`.
-            sample_wise_grads_per_batch (bool, optional): Whether to use an efficiency
-                    trick to compute the per-example gradients.  If True, `loss_fn` must
-                    behave like a `reduction='sum'` or `reduction='sum'` loss function,
-                    i.e. `BCELoss(reduction='sum')` or `BCELoss(reduction='mean')`.  If
-                    False, `loss_fn` must behave like a `reduction='none'` loss
-                    function, i.e. `BCELoss(reduction='none')`.
-                    Default: True
             projection_dim (int, optional): Directly determines the embedding's
                     dimension, if not None.  If None and `layer_block_projection_dim`
                     is not None, the latter specifies the embedding dimension.  If both
@@ -158,7 +149,6 @@ class FastKFACEmbedder(EmbedderBase):
         self.loss_fn = loss_fn
         # If test_loss_fn not provided, it's assumed to be same as loss_fn
         self.test_loss_fn = loss_fn if test_loss_fn is None else test_loss_fn
-        self.sample_wise_grads_per_batch = sample_wise_grads_per_batch
 
         # we save the reduction type for both `loss_fn` and `test_loss_fn` because
         # 1) if `sample_wise_grads_per_batch` is true, the reduction type is needed
@@ -167,12 +157,15 @@ class FastKFACEmbedder(EmbedderBase):
 
         # check `loss_fn`
         self.reduction_type = _check_loss_fn(
-            loss_fn, "loss_fn", sample_wise_grads_per_batch
-        )
+            loss_fn, "loss_fn", sample_wise_grads_per_batch=None
+        )  # the behavior when `sample_wise_grads_per_batch` is None is how we want to
+        # check the loss function - basically that it is either a sum or mean reduction
+        # loss function.  TODO: consider making custom checking function
+
         # check `test_loss_fn` if it was provided
         if not (test_loss_fn is None):
             self.test_reduction_type = _check_loss_fn(
-                test_loss_fn, "test_loss_fn", sample_wise_grads_per_batch
+                test_loss_fn, "test_loss_fn", sample_wise_grads_per_batch=None
             )
         else:
             self.test_reduction_type = self.reduction_type
@@ -341,7 +334,10 @@ class FastKFACEmbedder(EmbedderBase):
                         ]
 
                     top_ijs = [
-                        (int(flattened_idx / num_S_factors), flattened_idx % num_S_factors)
+                        (
+                            int(flattened_idx / num_S_factors),
+                            flattened_idx % num_S_factors,
+                        )
                         for flattened_idx in flattened_indices_to_keep
                     ]
 
@@ -364,14 +360,14 @@ class FastKFACEmbedder(EmbedderBase):
                             R_S_factors.append(None)
                         else:
                             R_A_factors.append(
-                                torch.stack([A_vs[:, i] for (i, _) in top_ijs], dim=0).to(
-                                    device=projection_device
-                                )
+                                torch.stack(
+                                    [A_vs[:, i] for (i, _) in top_ijs], dim=0
+                                ).to(device=projection_device)
                             )
                             R_S_factors.append(
-                                torch.stack([S_vs[:, j] for (_, j) in top_ijs], dim=0).to(
-                                    device=projection_device
-                                )
+                                torch.stack(
+                                    [S_vs[:, j] for (_, j) in top_ijs], dim=0
+                                ).to(device=projection_device)
                             )
 
                     R_ls.append(top_ls.to(device=projection_device))
@@ -386,7 +382,7 @@ class FastKFACEmbedder(EmbedderBase):
             # return FastKFACEmbedderFitResults(
             #     layer_R_A_factors, layer_R_S_factors, layer_R_scales
             # )
-        
+
     def _get_As_and_Ss(self, dataloader: DataLoader, show_progress: bool):
         """
         computes As and Ss, certain training data statistics
@@ -485,9 +481,9 @@ class FastKFACEmbedder(EmbedderBase):
                 layer_R_S_factors,
                 layer_R_ls,
             ) = self._retrieve_projections_fast_kfac_embedder_helper(
-                dataloader,
                 projection_on_cpu,
-                show_progress,
+                layer_As,
+                layer_Ss,
                 layer_block_projection_dim=None,  # is ignored because `eigenvalue_threshold` is specified
                 eigenvalue_threshold=eigenvalue_threshold,
                 return_eigenvalue_only=False,
@@ -583,7 +579,9 @@ class FastKFACEmbedder(EmbedderBase):
                         # of `None` for them, return embedding with width of 0
                         if block_A_factors is None:
                             batch_size = block_layer_input.shape[0]
-                            return torch.zeros((batch_size, 0)).to(device=self.model_device)
+                            return torch.zeros(
+                                (batch_size, 0), device=self.model_device
+                            )
 
                         # for each factor, simulate dot-product with `outer(S, A)`
                         def get_batch_layer_block_coordinates(
@@ -737,6 +735,7 @@ class FastKFACEmbedder(EmbedderBase):
         Args:
             path (str): path of file to load results from.
             projection_on_cpu (bool, optional): whether to load the results onto cpu.
+                    results will not be moved onto gpu if model is not on gpu.
                     Default: True
         """
         with open(path, "rb") as f:
@@ -744,38 +743,37 @@ class FastKFACEmbedder(EmbedderBase):
         projection_device = (
             torch.device("cpu") if projection_on_cpu else self.model_device
         )
-        self.fit_results.layer_R_A_factors = [
+        self._move_fit_results(self.fit_results, projection_device)
+
+    def _move_fit_results(self, fit_results, device):
+        fit_results.layer_R_A_factors = [
             [
                 (
-                    block_A_factors.to(device=projection_device)
+                    block_A_factors.to(device=device)
                     if block_A_factors is not None
                     else None
                 )
                 for block_A_factors in R_A_factors
             ]
-            for R_A_factors in self.fit_results.layer_R_A_factors
+            for R_A_factors in fit_results.layer_R_A_factors
         ]
-        self.fit_results.layer_R_S_factors = [
+        fit_results.layer_R_S_factors = [
             [
                 (
-                    block_S_factors.to(device=projection_device)
+                    block_S_factors.to(device=device)
                     if block_S_factors is not None
                     else None
                 )
                 for block_S_factors in R_S_factors
             ]
-            for R_S_factors in self.fit_results.layer_R_S_factors
+            for R_S_factors in fit_results.layer_R_S_factors
         ]
-        self.fit_results.layer_R_scales = [
+        fit_results.layer_R_scales = [
             [
-                (
-                    block_scales.to(device=projection_device)
-                    if block_scales is not None
-                    else None
-                )
+                (block_scales.to(device=device) if block_scales is not None else None)
                 for block_scales in R_scales
             ]
-            for R_scales in self.fit_results.layer_R_scales
+            for R_scales in fit_results.layer_R_scales
         ]
 
     def reset(self):

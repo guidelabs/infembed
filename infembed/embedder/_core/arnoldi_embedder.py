@@ -364,9 +364,11 @@ class ArnoldiEmbedder(EmbedderBase):
         self.layer_modules = _set_active_parameters(
             model,
             layers,
-            supported_layers=SAMPLEWISE_GRADS_PER_BATCH_SUPPORTED_LAYERS
-            if sample_wise_grads_per_batch
-            else None,
+            supported_layers=(
+                SAMPLEWISE_GRADS_PER_BATCH_SUPPORTED_LAYERS
+                if sample_wise_grads_per_batch
+                else None
+            ),
         )
 
         self.projection_dim = projection_dim
@@ -611,16 +613,26 @@ class ArnoldiEmbedder(EmbedderBase):
         with open(path, "wb") as f:
             pickle.dump(self.fit_results, f)
 
-    def load(self, path: str):
+    def load(self, path: str, projection_on_cpu: bool = True):
         """
         Loads the results saved by the `save` method.  Instead of calling `fit`, one
         can instead call `load`.
 
         Args:
             path (str): path of file to load results from.
+            projection_on_cpu (bool, optional): whether to load the results onto cpu.
+                    results will not be moved onto gpu if model is not on gpu.
+                    Default: True
         """
         with open(path, "rb") as f:
             self.fit_results = pickle.load(f)
+        projection_device = (
+            torch.device("cpu") if projection_on_cpu else self.model_device
+        )
+        self.fit_results.R = [
+            tuple([param.to(device=projection_device) for param in params])
+            for params in self.fit_results.R
+        ]
 
     def reset(self):
         """

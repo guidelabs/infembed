@@ -26,10 +26,10 @@ class _LayerCaptureInput:
         self, module: nn.Module, input: Tuple[Tensor, ...], output: Tuple[Tensor, ...]
     ):
         if self.device is not None:
-            self.input = tuple(_input.detach() for _input in input)
+            self.input = tuple(_input.detach().to(device=self.device) for _input in input)
         else:
             self.input = tuple(
-                _input.detach().to(device=self.device) for _input in input
+                _input.detach() for _input in input
             )
 
 
@@ -283,7 +283,6 @@ class _LayerHessianFlattenedIndependentAcumulator(_LayerInputOutputGradientAccum
     def update(
         self, layer_input: Tensor, layer_output_gradient: Tensor, batch: Tuple
     ) -> None:
-
         batch_size = len(layer_input)
         layer_input = Reshaper.layer_input_to_two_d(self.layer, layer_input)
         layer_output_gradient = Reshaper.layer_output_gradient_to_two_d(
@@ -300,7 +299,6 @@ class _LayerHessianFlattenedIndependentAcumulator(_LayerInputOutputGradientAccum
                 for _ in range(self.split_two_d.num_splits(layer_output_gradient))
             ]
             assert len(self.layer_A_accumulators) == len(self.layer_S_accumulators)
-
         for _accumulator, _layer_input in zip(
             self.layer_A_accumulators, self.split_two_d(layer_input)
         ):
@@ -500,14 +498,16 @@ class Reshaper:
 
         else:
             raise Exception(f"layer {layer} not supported")
-
+        # import pdb
+        # pdb.set_trace()
         # 2) add bias
         # do so for every "example" (meaning actual examples as well as image or text location)
         if layer.bias is not None:
             layer_input = torch.cat(
                 [
                     layer_input,
-                    torch.ones((*layer_input.shape[:-1], 1)).to(layer_input.device),
+                    # torch.ones((*layer_input.shape[:-1], 1)).to(layer_input.device),
+                    torch.ones((*layer_input.shape[:-1], 1), device=layer_input.device),
                 ],
                 dim=-1,
             )
