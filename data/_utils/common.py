@@ -127,10 +127,12 @@ class DecoderLLMCollateFn:
         shifted_input_ids = torch.cat(
             [
                 torch.ones(len(texts), 1) * self.tokenizer.bos_token_id,
-                d["input_ids"][:, :-1],
+                d["input_ids"][:, :max(d["input_ids"].shape[1] - 1, 0)],
+                # take everything but last position of `input_ids`.  if length 0,
+                # take nothing
             ],
             dim=1,
-        )[:,:d["input_ids"].shape[1]]
+        ) #[:,:d["input_ids"].shape[1]]
         # create the mask used for generation during training. it's the same for each example, so is 2D
         mask = subsequent_mask(shifted_input_ids.shape[1])
         return {
@@ -167,7 +169,7 @@ class EmptyTextDataset(IterableDataset):
 
     def __iter__(self):
         for _ in range(self.num_examples):
-            yield ' '
+            yield ''
 
 
 class IterableDatasetToDataset(Dataset):

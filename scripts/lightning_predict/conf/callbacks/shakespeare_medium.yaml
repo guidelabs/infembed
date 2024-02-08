@@ -4,6 +4,4 @@
   hook_strings:
   - 'on_predict_batch_end'
   tokenizer:
-    # _target_: data._utils.character_tokenizer.CharacterTokenizer
-    # model_max_length: 64 
     _target_: data._utils.common.character_tokenizer

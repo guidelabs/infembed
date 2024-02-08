@@ -2,9 +2,13 @@ _target_: data._utils.common.GenericDataModule
 train_dataloader:
   _target_: torch.utils.data.DataLoader
   dataset:
-    _target_: data._utils.common.DatasetFromText
-    path: '/home/ubuntu/Documents/experimental/data/files/shakespeare/input_train.txt'
-    text_size: 64
+    _target_: data._utils.common.LimitIterableDataset
+    dataset:
+      _target_: data._utils.common.DatasetFromText
+      path: "/Users/fultonwang/Documents/infembed/files/shakespeare/input_train.txt"
+      text_size: 64
+    num: 128000
+    # num: 128
   batch_size: 64
   collate_fn:
     _target_: data._utils.common.DecoderLLMCollateFn
@@ -13,13 +17,16 @@ train_dataloader:
       # model_max_length: 64 
       _target_: data._utils.common.character_tokenizer
     max_len: 64
-  num_workers: 47
+  num_workers: 0
 val_dataloader:
   _target_: torch.utils.data.DataLoader
   dataset:
-    _target_: data._utils.common.DatasetFromText
-    path: '/home/ubuntu/Documents/experimental/data/files/shakespeare/input_val.txt'
-    text_size: 64
+    _target_: data._utils.common.LimitIterableDataset
+    dataset:
+      _target_: data._utils.common.DatasetFromText
+      path: "/Users/fultonwang/Documents/infembed/files/shakespeare/input_val.txt"
+      text_size: 64
+    num: 10000
   # dataset:
   #   _target_: data._utils.common.EmptyTextDataset
   #   num_examples: 10
