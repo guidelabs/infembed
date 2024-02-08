@@ -40,11 +40,14 @@ class Attention(nn.Module):
         # compute pairwise dot-products
         weights = torch.sum(_querys[:, :, None, :] * _keys[:, None, :, :], dim=3)
         # apply mask
-        weights = weights * mask[None, :, :]
+        # import pdb
+        # pdb.set_trace()
+        # weights = weights * mask[None, :, :]
+        weights = weights.masked_fill(mask[None, :, :] == 0, -1e9)
         # normalize for each query
         weights = F.softmax(weights, dim=2)  # batch size X seq length x seq length
         # weight with values.
-        x = torch.einsum("ijk,ikl->ijl", weights, _values)
+        x = torch.einsum("ijk,ikl->ijl", weights, _values)  # TODO: check
         # x = weights @ values.T
         return x  # batch size X seq len x `value_dim`
 
@@ -197,7 +200,6 @@ class Generator(nn.Module):
         super().__init__()
         self.projection = nn.Linear(model_dim, num_tokens)
 
-
     def forward(self, x):
         return F.log_softmax(self.projection(x), dim=2)
 
@@ -278,7 +280,14 @@ class LLMCrossEntropyLoss(nn.Module):
     def forward(self, output, attention_mask, labels):
         # get per-example, per-position losses
         # losses = F.cross_entropy(output, labels, reduction='none')
-        losses = F.cross_entropy(output.view(-1, output.shape[-1]), labels.view(-1), reduction='none')
+        losses = F.cross_entropy(
+            output.view(-1, output.shape[-1]), labels.view(-1), reduction="none"
+        )
+        if False:
+            brute = sum([F.cross_entropy(_output, _labels, reduction='sum') for (_output, _labels) in zip(output, labels)])
+            print(losses.sum(), brute)
+            import pdb
+            pdb.set_trace()
         # multiply by attention mask to ignore padding locations
         # losses *= attention_mask
         losses *= attention_mask.view(-1)
@@ -348,6 +357,7 @@ class DecoderLightningModule(L.LightningModule):
             self.parameters(), lr=1e-3, betas=(0.9, 0.99), weight_decay=1e-1
         )
         from torch.optim.lr_scheduler import CosineAnnealingLR
+
         scheduler = CosineAnnealingLR(optimizer, T_max=8000, eta_min=6e-5)
         return [optimizer], [scheduler]
 
@@ -360,23 +370,31 @@ class DecoderLightningModule(L.LightningModule):
     def training_step(self, batch, batch_idx):
         d = self._step(batch, batch_idx)
         self.log_dict(
-            {f"train_{key}": val for (key, val) in d.items() if key[0] != "_"}
+            {f"train_{key}": val for (key, val) in d.items() if key[0] != "_"},
+            on_step=True,
+            on_epoch=True,
         )
         return d
 
     def validation_step(self, batch, batch_idx):
         d = self._step(batch, batch_idx)
         self.log_dict(
-            {f"validation_{key}": val for (key, val) in d.items() if key[0] != "_"}
+            {f"validation_{key}": val for (key, val) in d.items() if key[0] != "_"},
+            on_step=True,
+            on_epoch=True,
         )
         return d
 
-    # def prediction_step(self, batch, batch_idx):
-    #     d = self._step(batch, batch_idx)
-    #     self.log_dict(
-    #         {f"prediction_{key}": val for (key, val) in d.items() if key[0] != "_"}
-    #     )
-    #     return d
+    def prediction_step(self, batch, batch_idx):
+        import pdb
+        pdb.set_trace()
+        d = self._step(batch, batch_idx)
+        self.log_dict(
+            {f"prediction_{key}": val for (key, val) in d.items() if key[0] != "_"},
+            on_step=True,
+            on_epoch=True,
+        )
+        return d
 
     def forward(self, batch):
         # output is the log probabilities for each position and token
@@ -412,8 +430,6 @@ class GreedyDecoder:
                     )
                 )
             )
-            import pdb
-            pdb.set_trace()
             output = output[-1]
             top_id = torch.argmax(output)
             if top_id == eos_token:

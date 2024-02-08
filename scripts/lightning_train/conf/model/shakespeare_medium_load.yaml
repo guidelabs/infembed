@@ -13,6 +13,13 @@ model:
     # num_tokens: 107
     num_tokens: 256
     max_len: 64
+  loss_fn:
+  # _target_: models._core.decoder_llm.LabelSmoothingLoss
+  # criterion:
+  #   _target_: torch.nn.KLDivLoss
+  #   reduction: 'sum'
+  # smoothing: 1e-3
+    _target_: models._core.decoder_llm.LLMCrossEntropyLoss
 eval: true
 checkpoints_load_func: 
   _target_: models._utils.common.default_checkpoints_load_func
@@ -23,8 +30,7 @@ checkpoints_load_func:
 # checkpoint: '/home/ubuntu/Documents/infembed/examples/shakespeare/hydra_outputs/lightning_train/test/0/lightning_logs/g88yw0cq/checkpoints/epoch=0-step=8000.ckpt'
 # checkpoint: '/home/ubuntu/Documents/infembed/examples/shakespeare/hydra_outputs/lightning_train/test/0/lightning_logs/csjk7rd0/checkpoints/epoch=0-step=8000.ckpt'
 # checkpoint: '/Users/fultonwang/Documents/infembed/examples/shakespeare/hydra_outputs/lightning_train/test/0/lightning_logs/q8be9kse/checkpoints/epoch=0-step=8000.ckpt'
-# checkpoint: '/Users/fultonwang/Documents/infembed/examples/shakespeare/hydra_outputs/lightning_train/test/0/lightning_logs/qto0il1f/checkpoints/epoch=16-step=4000.ckpt'
-checkpoint: '/Users/fultonwang/Documents/infembed/examples/shakespeare/hydra_outputs/lightning_train/test/0/lightning_logs/hg06ihka/checkpoints/epoch=8-step=2000.ckpt'
+checkpoint: '/Users/fultonwang/Documents/infembed/examples/shakespeare/hydra_outputs/lightning_train/test/0/lightning_logs/qto0il1f/checkpoints/epoch=16-step=4000.ckpt'
 # _target_: models._utils.common.lightning_load_model
 # load_from_checkpoint_fn: 
 #   _target_: models._core.decoder_llm.DecoderLightningModule.load_from_checkpoint

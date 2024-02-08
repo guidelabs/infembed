@@ -2,3 +2,4 @@
 */outputs/*
 */lightning_logs/*
 */.hydra/*
+hydra_outputs/

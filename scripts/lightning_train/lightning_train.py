@@ -21,7 +21,14 @@ def run(cfg: DictConfig):
         callbacks=instantiate(cfg.callbacks), **instantiate(cfg.trainer_kwargs)
     )
 
-    trainer.fit(model=instantiate(cfg.model), datamodule=instantiate(cfg.datamodule))
+    validate = False
+    if 'validate' in cfg:
+        validate = cfg['validate']['validate']
+
+    if not validate:
+        trainer.fit(model=instantiate(cfg.model), datamodule=instantiate(cfg.datamodule))
+    else:
+        trainer.validate(model=instantiate(cfg.model), datamodule=instantiate(cfg.datamodule))
 
 
 if __name__ == "__main__":

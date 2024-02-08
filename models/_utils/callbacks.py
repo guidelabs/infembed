@@ -68,6 +68,7 @@ class GreedyDecoderCallback(GenericCallback):
         decoder = GreedyDecoder(max_len=pl_module.max_len if self.max_len is None else self.max_len)
         text_ids = [decoder(pl_module, self.eos_token_id, example) for example in batch['input_ids']]
         texts = [self.tokenizer.decode(text_id) for text_id in text_ids]
+        print(texts)
         table = wandb.Table(columns=['text'], data=[[text] for text in texts])
         # pl_module.log_dict({phase: {'greedy_text': table}})
         wandb.log({'greedy_text': table})
