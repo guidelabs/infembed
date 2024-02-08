@@ -1,5 +1,6 @@
 _target_: data._core.agnews.agnews_dataloader
-split: train
+split: test
 device: 'cuda:1'
 batch_size: 32
 shuffle: true
+num_workers: 10

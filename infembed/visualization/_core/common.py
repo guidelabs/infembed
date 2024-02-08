@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List
+from typing import Callable, List, Optional
 import pandas as pd
 from infembed.utils.common import Data
 import matplotlib.pyplot as plt
@@ -74,9 +74,15 @@ class PerClusterDisplayer(Displayer):
         data: Data,
     ):
         for k, cluster in enumerate(clusters):
-            print(f"cluster #{k}")
+            header = f"""
+###############
+   cluster {k} 
+###############
+            """
+            print(header)
             for displayer in self.single_cluster_displayers:
                 displayer(cluster, data)
+                print()
 
 
 class DisplayAccuracy(SingleClusterDisplayer):
@@ -110,8 +116,9 @@ class DisplayPredictionAndLabels(SingleClusterDisplayer):
 
 
 class DisplayCounts(SingleClusterDisplayer):
-    def __init__(self, cols: List[str]):
+    def __init__(self, cols: List[str], ignore_threshold: Optional[int] = None):
         self.cols = cols
+        self.ignore_threshold = ignore_threshold
 
     def __call__(
         self,
@@ -120,8 +127,10 @@ class DisplayCounts(SingleClusterDisplayer):
     ):
         assert data.metadata is not None
         for col in self.cols:
-            counts = data.metadata.iloc[cluster][col].value_counts().sort_index()
-            print(f"{col}: {dict(counts)}")
+            counts = data.metadata.iloc[cluster][col].value_counts().sort_values(ascending=False)
+            if self.ignore_threshold is not None:
+                counts = counts[counts > self.ignore_threshold]
+            print(f"{col} counts: {dict(counts)}")
 
 
 class SingleExampleDisplayer(ABC):
@@ -139,27 +148,47 @@ class DisplayMetadata(SingleExampleDisplayer):
 
 
 class DisplayPIL(SingleExampleDisplayer):
+    def __init__(self, height=200):
+        self.height = height
+
     def __call__(self, i: int, data: Data):
         #fig, ax = plt.subplots()
-        fig = plt.figure(figsize=(3,4))
-        ax = fig.add_subplot(1,1,1)
+        # fig = plt.figure(figsize=(3,4))
+        # ax = fig.add_subplot(1,1,1)
         # assume dataset has the image in 0-th position
-        from torchvision.transforms.functional import pil_to_tensor
+        image = data.dataset[i][0]
+        width, height = image.size
+        new_height = self.height
+        new_width = int(width * new_height / height)
+        image = image.resize((new_width, new_height))
+        image.show()
+        # import pdb
+        # pdb.set_trace()
+        # data.dataset[i][0].show()
+        # from torchvision.transforms.functional import pil_to_tensor
         # .permute(1, 2, 0)
-        ax.imshow(pil_to_tensor(data.dataset[i][0]).permute(1, 2, 0))
+        # ax.imshow(pil_to_tensor(data.dataset[i][0]).permute(1, 2, 0))
         # ax.imshow(torch.clip(pil_to_tensor(data.dataset[i][0]).permute(1, 2, 0), 0, 1))
-        fig.show()
+        # fig.show()
         #plt.close(fig)
 
 
 class DisplaySingleExamples(SingleClusterDisplayer):
-    def __init__(self, single_example_displayers: List[SingleExampleDisplayer], limit=None):
+    def __init__(self, single_example_displayers: List[SingleExampleDisplayer], limit=None, condition: Optional[Callable] = None):
         self.single_example_displayers = single_example_displayers
-        self.limit = limit
+        self.limit, self.condition = limit, condition
 
     def __call__(self, cluster: List[int], data: Data):
-        for (num, i) in enumerate(cluster):
+        num = 0
+        for i in cluster:
             if self.limit is not None and num >= self.limit:
                 break
-            for displayer in self.single_example_displayers:
-                displayer(i, data)
+            if self.condition(i, data):
+                header = f"""
+### example {i} ###
+"""
+                print(header)
+                for displayer in self.single_example_displayers:
+                    displayer(i, data)
+                num += 1
+                print()

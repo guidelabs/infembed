@@ -1,0 +1,27 @@
+_target_: data._utils.common.GenericDataModule
+train_dataloader:
+  _target_: torch.utils.data.DataLoader
+  dataset:
+    _target_: data._utils.common.LimitIterableDataset
+    dataset: 
+      _target_: data._core.tinystories.TinyStoriesDataset
+      data_path: '/home/ubuntu/Documents/infembed/files/tinystories/TinyStoriesV2-GPT4-train.txt'
+    num: null
+  collate_fn:
+    _target_: data._core.tinystories.TinyStoriesCollateFn
+    duplicate: false
+    device: ${model.model.device}
+  batch_size: 4
+val_dataloader:
+  _target_: torch.utils.data.DataLoader
+  dataset:
+    _target_: data._utils.common.LimitIterableDataset
+    dataset: 
+      _target_: data._core.tinystories.TinyStoriesDataset
+      data_path: '/home/ubuntu/Documents/infembed/files/tinystories/TinyStoriesV2-GPT4-valid.txt'
+    num: null
+  collate_fn:
+    _target_: data._core.tinystories.TinyStoriesCollateFn
+    duplicate: false
+    device: ${model.model.device}
+  batch_size: 4

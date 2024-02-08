@@ -1,0 +1,5 @@
+- _target_: helpers.BatchEndWriter
+  prediction_extractors_d:
+    preds:
+      _target_: helpers.default_get_preds
+      _partial_: true

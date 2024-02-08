@@ -6,5 +6,6 @@ model:
       _target_: 'transformers.AutoModelForCausalLM.from_pretrained'
       pretrained_model_name_or_path: 'roneneldan/TinyStories-33M'
   device: 'cuda:1'
+  eval: true
 layers:
   - 'model.lm_head'

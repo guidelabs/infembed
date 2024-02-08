@@ -18,6 +18,7 @@ class EmbedderConstructor:
 
     def __init__(self, constructor, name: Optional[str] = None, **kwargs):
         self._constructor = functools.partial(constructor, **kwargs)
+        self.constructor_class = constructor
         self.kwargs = kwargs
         self.name = name if name is not None else self._default_name()
 

@@ -1,8 +1,0 @@
-- _target_: lightning.pytorch.callbacks.EarlyStopping
-  patience: 3
-  monitor: validation_loss
-  mode: min
-  verbose: true
-- _target_: lightning.pytorch.callbacks.ModelCheckpoint
-#  dirpath: '/home/fultonwang/Documents/code/experimental/results/vae/results/test/checkpoints'
-  monitor: validation_loss

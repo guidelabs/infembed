@@ -18,13 +18,19 @@ class _LayerCaptureInput:
     stores the input from the latest call.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, device="cpu") -> None:
         self.input: Optional[Tuple[Tensor, ...]] = None
+        self.device = device
 
     def __call__(
         self, module: nn.Module, input: Tuple[Tensor, ...], output: Tuple[Tensor, ...]
     ):
-        self.input = input
+        if self.device is not None:
+            self.input = tuple(_input.detach().to(device=self.device) for _input in input)
+        else:
+            self.input = tuple(
+                _input.detach() for _input in input
+            )
 
 
 class _LayerCaptureOutputGradient:
@@ -33,8 +39,9 @@ class _LayerCaptureOutputGradient:
     times, only stores the output gradient from the latest call.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, device="cpu") -> None:
         self.output_gradient: Optional[Tuple[Tensor, ...]] = None
+        self.device = device
 
     def __call__(
         self,
@@ -42,7 +49,15 @@ class _LayerCaptureOutputGradient:
         input_gradient: Tuple[Tensor, ...],
         output_gradient: Tuple[Tensor, ...],
     ):
-        self.output_gradient = output_gradient
+        if self.device is not None:
+            self.output_gradient = tuple(
+                _output_gradient.detach().to(device=self.device)
+                for _output_gradient in output_gradient
+            )
+        else:
+            self.output_gradient = tuple(
+                _output_gradient.detach() for _output_gradient in output_gradient
+            )
 
 
 class _RunningAverage:
@@ -63,9 +78,20 @@ class _RunningAverage:
             self.val = val
             self.num_samples = num_samples
         else:
-            self.val = ((val * num_samples) + (self.val * self.num_samples)) / (
-                num_samples + self.num_samples
-            )
+            if False:
+                if True:
+                    a = self.val.clone()
+                    a += val * (num_samples / self.num_samples)
+                    a /= (num_samples + self.num_samples) / self.num_samples
+
+                if True:
+                    b = self.val.clone()
+                    b = ((val * num_samples) + (self.val * self.num_samples)) / (
+                        num_samples + self.num_samples
+                    )
+                assert (a - b).abs().sum() < 1e-2
+            self.val += val * (num_samples / self.num_samples)
+            self.val /= (num_samples + self.num_samples) / self.num_samples
             self.num_samples = num_samples + self.num_samples
 
     def results(self):
@@ -157,6 +183,7 @@ class SplitTwoD:
     `Reshaper.layer_output_gradient_to_two_d`, and splits it along the last (i.e.
     input feature or output feature) dimension.
     """
+
     @abstractmethod
     def __call__(self, two_d: Tensor) -> Iterable[Tensor]:
         raise NotImplementedError
@@ -171,6 +198,7 @@ class DummySplitTwoD(SplitTwoD):
     does not actually do any splitting.  use this if not doing any approximation of a
     single layer's hessian
     """
+
     def __call__(self, two_d) -> Iterable[Tensor]:
         yield two_d
 
@@ -182,6 +210,7 @@ class BlockSplitTwoD(SplitTwoD):
     """
     splits into contiguous chunks
     """
+
     def __init__(self, num_blocks: int):
         self.num_blocks = num_blocks
 
@@ -195,12 +224,12 @@ class BlockSplitTwoD(SplitTwoD):
                 yield (start, end)
 
     def __call__(self, two_d) -> Iterable[Tensor]:
-        for (start, end) in self._get_start_ends(two_d):
+        for start, end in self._get_start_ends(two_d):
             yield two_d[:, :, start:end]
 
     def num_splits(self, two_d):
         return len([_ for _ in self._get_start_ends(two_d)])
-        
+
 
 def _get_A(layer: nn.Module, layer_input: Tensor):
     """
@@ -239,7 +268,7 @@ class _LayerHessianFlattenedIndependentAcumulator(_LayerInputOutputGradientAccum
     and output gradient are independent.
     """
 
-    def __init__(self, layer: nn.Module, split_two_d: Optional[SplitTwoD]=None):
+    def __init__(self, layer: nn.Module, split_two_d: Optional[SplitTwoD] = None):
         self.layer = layer
         if split_two_d is None:
             split_two_d = DummySplitTwoD()
@@ -254,19 +283,29 @@ class _LayerHessianFlattenedIndependentAcumulator(_LayerInputOutputGradientAccum
     def update(
         self, layer_input: Tensor, layer_output_gradient: Tensor, batch: Tuple
     ) -> None:
-
         batch_size = len(layer_input)
         layer_input = Reshaper.layer_input_to_two_d(self.layer, layer_input)
-        layer_output_gradient = Reshaper.layer_output_gradient_to_two_d(self.layer, layer_output_gradient)
+        layer_output_gradient = Reshaper.layer_output_gradient_to_two_d(
+            self.layer, layer_output_gradient
+        )
 
         if self.layer_A_accumulators is None:
-            self.layer_A_accumulators = [_RunningAverage().setup() for _ in range(self.split_two_d.num_splits(layer_input))]
-            self.layer_S_accumulators = [_RunningAverage().setup() for _ in range(self.split_two_d.num_splits(layer_output_gradient))]
+            self.layer_A_accumulators = [
+                _RunningAverage().setup()
+                for _ in range(self.split_two_d.num_splits(layer_input))
+            ]
+            self.layer_S_accumulators = [
+                _RunningAverage().setup()
+                for _ in range(self.split_two_d.num_splits(layer_output_gradient))
+            ]
             assert len(self.layer_A_accumulators) == len(self.layer_S_accumulators)
-
-        for (_accumulator, _layer_input) in zip(self.layer_A_accumulators, self.split_two_d(layer_input)):
+        for _accumulator, _layer_input in zip(
+            self.layer_A_accumulators, self.split_two_d(layer_input)
+        ):
             _accumulator.update(batch_size, _get_A(self.layer, _layer_input))
-        for (_accumulator, _layer_output_gradient) in zip(self.layer_S_accumulators, self.split_two_d(layer_output_gradient)):
+        for _accumulator, _layer_output_gradient in zip(
+            self.layer_S_accumulators, self.split_two_d(layer_output_gradient)
+        ):
             _accumulator.update(batch_size, _get_S(self.layer, _layer_output_gradient))
 
 
@@ -294,6 +333,7 @@ def _accumulate_with_layer_inputs_and_output_gradients(
     reduction_type,
     loss_fn,
     show_progress,
+    accumulate_device="cpu",
 ):
     """
     for each batch in `dataloader`, runs forward and backward pass to get the input and
@@ -301,8 +341,12 @@ def _accumulate_with_layer_inputs_and_output_gradients(
     to do some custom calculations, i.e. estimate the Hessian for the batch.
     """
     # add hooks to capture the input and output gradient of layers
-    layer_input_hooks = [_LayerCaptureInput() for _ in layer_modules]
-    layer_output_gradient_hooks = [_LayerCaptureOutputGradient() for _ in layer_modules]
+    layer_input_hooks = [
+        _LayerCaptureInput(device=accumulate_device) for _ in layer_modules
+    ]
+    layer_output_gradient_hooks = [
+        _LayerCaptureOutputGradient(device=accumulate_device) for _ in layer_modules
+    ]
     layer_input_hook_handles = [
         layer.register_forward_hook(hook)
         for (hook, layer) in zip(layer_input_hooks, layer_modules)
@@ -330,7 +374,7 @@ def _accumulate_with_layer_inputs_and_output_gradients(
         _layer_inputs = [
             layer_input_hook.input[0] for layer_input_hook in layer_input_hooks
         ]
-        
+
         # backward pass
         loss = _compute_batch_loss_influence_function_base(
             loss_fn, _output, labels, reduction_type
@@ -344,7 +388,7 @@ def _accumulate_with_layer_inputs_and_output_gradients(
         ]
 
         # update accumulator based on results for the batch
-        for (_layer_input, _layer_output_gradient, layer_accumulator) in zip(
+        for _layer_input, _layer_output_gradient, layer_accumulator in zip(
             _layer_inputs, _layer_output_gradients, layer_accumulators
         ):
             layer_accumulator.update(_layer_input, _layer_output_gradient, batch)
@@ -454,12 +498,17 @@ class Reshaper:
 
         else:
             raise Exception(f"layer {layer} not supported")
-
+        # import pdb
+        # pdb.set_trace()
         # 2) add bias
         # do so for every "example" (meaning actual examples as well as image or text location)
         if layer.bias is not None:
             layer_input = torch.cat(
-                [layer_input, torch.ones((*layer_input.shape[:-1], 1)).to(layer_input.device)],
+                [
+                    layer_input,
+                    # torch.ones((*layer_input.shape[:-1], 1)).to(layer_input.device),
+                    torch.ones((*layer_input.shape[:-1], 1), device=layer_input.device),
+                ],
                 dim=-1,
             )
 

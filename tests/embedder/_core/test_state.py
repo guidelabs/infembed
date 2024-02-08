@@ -1,8 +1,11 @@
-from typing import Callable, Union
+from typing import Callable, Optional, Union
 from unittest import TestCase
 from infembed.embedder._core.arnoldi_embedder import ArnoldiEmbedder
 from infembed.embedder._core.fast_kfac_embedder import FastKFACEmbedder
-from infembed.embedder._core.gradient_embedder import GradientEmbedder, PCAGradientEmbedder
+from infembed.embedder._core.gradient_embedder import (
+    GradientEmbedder,
+    PCAGradientEmbedder,
+)
 from infembed.embedder._core.kfac_embedder import KFACEmbedder
 from infembed.embedder._utils.common import NotFitException, _format_inputs_dataset
 from infembed.embedder._core.naive_embedder import NaiveEmbedder
@@ -27,6 +30,10 @@ class TestSaveLoad(TestCase):
                 unpack_inputs,
                 use_gpu,
                 model_type,
+                init_projection_on_cpu,
+                load_projection_on_cpu,
+                reduction,
+                sample_wise_grads_per_batch,
             )
             for use_gpu in USE_GPU_LIST
             for (
@@ -58,6 +65,16 @@ class TestSaveLoad(TestCase):
                         layers=["linear"],
                         layer_projection_dim=None,
                         independent_factors=True,
+                        hessian_inverse_tol=0.0,
+                    ),
+                    "one_layer_linear",
+                ),
+                (
+                    EmbedderConstructor(
+                        KFACEmbedder,
+                        layers=["linear"],
+                        layer_projection_dim=None,
+                        independent_factors=False,
                         hessian_inverse_tol=0.0,
                     ),
                     "one_layer_linear",
@@ -105,6 +122,16 @@ class TestSaveLoad(TestCase):
                         layers=["linear1", "linear2"],
                         layer_projection_dim=None,
                         independent_factors=True,
+                        hessian_inverse_tol=0.0,
+                    ),
+                    "seq",
+                ),
+                (
+                    EmbedderConstructor(
+                        KFACEmbedder,
+                        layers=["linear1", "linear2"],
+                        layer_projection_dim=None,
+                        independent_factors=False,
                         hessian_inverse_tol=0.0,
                     ),
                     "seq",
@@ -167,6 +194,19 @@ class TestSaveLoad(TestCase):
                 ),
                 (
                     EmbedderConstructor(
+                        KFACEmbedder,
+                        layers=["linear1", "conv"],
+                        # layers=["linear1"],
+                        layer_projection_dim=100,
+                        independent_factors=False,
+                        # hessian_inverse_tol=0.0,
+                        hessian_inverse_tol=-1e-2,
+                        hessian_reg=1e-8,
+                    ),
+                    "conv",
+                ),
+                (
+                    EmbedderConstructor(
                         ArnoldiEmbedder,
                         layers=["linear1", "conv"],
                         # layers=["linear1"],
@@ -218,6 +258,23 @@ class TestSaveLoad(TestCase):
                 False,
                 True,
             ]
+            for init_projection_on_cpu in (
+                [True, False]
+                if embedder_constructor.constructor_class
+                in [FastKFACEmbedder, KFACEmbedder, ArnoldiEmbedder, NaiveEmbedder]
+                else [None]
+            )
+            for load_projection_on_cpu in (
+                [True, False]
+                if embedder_constructor.constructor_class
+                in [FastKFACEmbedder, KFACEmbedder, ArnoldiEmbedder, NaiveEmbedder]
+                else [None]
+            )
+            for (reduction, sample_wise_grads_per_batch) in (
+                [["sum", True], ["none", False]]
+                if embedder_constructor.constructor_class not in [FastKFACEmbedder]
+                else [["sum", None]]
+            )
         ],
         name_func=build_test_name_func(),
     )
@@ -227,6 +284,10 @@ class TestSaveLoad(TestCase):
         unpack_inputs,
         use_gpu: Union[bool, str],
         model_type: str,
+        init_projection_on_cpu: Optional[bool],
+        load_projection_on_cpu: Optional[bool],
+        reduction: str,
+        sample_wise_grads_per_batch: Optional[bool],
     ):
         """
         tests that directly computing embeddings and saving the results in `fit`,
@@ -246,8 +307,22 @@ class TestSaveLoad(TestCase):
         )
 
         train_dataloader = DataLoader(train_dataset, batch_size=5)
-        criterion = nn.MSELoss(reduction="none")
-        embedder = embedder_constructor(model=net, loss_fn=criterion)
+        criterion = nn.MSELoss(reduction=reduction)
+        
+        embedder_constructor_kwargs = {
+            "model": net,
+            "loss_fn": criterion,
+        }
+
+        if init_projection_on_cpu is not None:
+            embedder_constructor_kwargs["projection_on_cpu"] = init_projection_on_cpu
+        if sample_wise_grads_per_batch is not None:
+            embedder_constructor_kwargs["sample_wise_grads_per_batch"] = (
+                sample_wise_grads_per_batch
+            )
+
+        embedder = embedder_constructor(**embedder_constructor_kwargs)
+
         embedder.fit(train_dataloader)
 
         test_dataloader = _format_inputs_dataset(
@@ -264,7 +339,12 @@ class TestSaveLoad(TestCase):
             if not isinstance(embedder, GradientEmbedder):
                 # `GradientEmbedder` does not need `fit` to be called
                 self.assertRaises(NotFitException, embedder.predict, test_dataloader)
-            embedder.load(tmp.name)
+            if load_projection_on_cpu is not None:
+                embedder.load(tmp.name, load_projection_on_cpu)
+            else:
+                embedder.load(tmp.name)
             embeddings_2 = embedder.predict(test_dataloader)
 
-        assertTensorAlmostEqual(self, embeddings_1, embeddings_2, delta=1e-5, mode="sum")
+        assertTensorAlmostEqual(
+            self, embeddings_1, embeddings_2, delta=1e-5, mode="sum"
+        )

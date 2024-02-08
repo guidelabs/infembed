@@ -1,0 +1,9 @@
+_target_: models._utils.common.load_model
+model:
+  _target_: models._core.spotcheck.SpotcheckLightningModule
+eval: true
+checkpoints_load_func: 
+  _target_: models._utils.common.default_checkpoints_load_func
+  key: state_dict
+  _partial_: true
+checkpoint: '/home/ubuntu/Documents/infembed/examples/spotcheck/hydra_outputs/lightning_train/test/trial_1/lr_0.0001/lightning_logs/4xzipp5b/checkpoints/epoch=1-step=6400.ckpt'

@@ -1,0 +1,18 @@
+defaults:
+  - embedder_constructor: fast_kfac_hf
+  - io: standard
+  - model: tinystories
+  - test_dataloader: tinystories
+  - train_dataloader: tinystories
+  - loss: huggingface
+  - _self_
+hydra:
+  run:
+#    dir: outputs/fast_kfac
+    dir: /home/ubuntu/Documents/infembed/examples/tinystories/hydra_outputs/run_embedder/test
+#    dir: outputs/spotcheck/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+#    dir: outputs/fast_kfac
+    dir: /home/ubuntu/Documents/infembed/examples/tinystories/hydra_outputs/run_embedder/test
+#    dir: outputs/spotcheck/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: dim=${embedder_constructor.projection_dim}/blocks=${embedder_constructor.per_layer_blocks}

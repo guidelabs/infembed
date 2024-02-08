@@ -403,16 +403,23 @@ class NaiveEmbedder(EmbedderBase):
         with open(path, "wb") as f:
             pickle.dump(self.fit_results, f)
 
-    def load(self, path: str):
+    def load(self, path: str, projection_on_cpu: bool = True):
         """
         Loads the results saved by the `save` method.  Instead of calling `fit`, one
         can instead call `load`.
 
         Args:
             path (str): path of file to load results from.
+            projection_on_cpu (bool, optional): whether to load the results onto cpu.
+                    results will not be moved onto gpu if model is not on gpu.
+                    Default: True
         """
         with open(path, "rb") as f:
             self.fit_results = pickle.load(f)
+        projection_device = (
+            torch.device("cpu") if projection_on_cpu else self.model_device
+        )
+        self.fit_results.R = self.fit_results.R.to(device=projection_device)
 
     def reset(self):
         """

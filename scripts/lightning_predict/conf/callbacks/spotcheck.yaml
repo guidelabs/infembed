@@ -1,0 +1,19 @@
+- _target_: helpers.TorchMetricsCallback
+  metrics:
+    _target_: builtins.dict
+    _convert_: 'object'
+    accuracy: 
+      _target_: torchmetrics.classification.BinaryAccuracy
+    auc:
+      _target_: torchmetrics.AUROC
+      task: binary
+  write_path: 'metrics.csv'
+- _target_: helpers.BatchEndWriter
+  batch_extractors_d:
+    target: 
+      _target_: helpers.default_get_target
+      _partial_: true
+  prediction_extractors_d:
+    preds:
+      _target_: helpers.default_get_preds
+      _partial_: true

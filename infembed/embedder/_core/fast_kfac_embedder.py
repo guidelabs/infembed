@@ -67,7 +67,6 @@ class FastKFACEmbedder(EmbedderBase):
         layers: Optional[List[str]] = None,
         loss_fn: Optional[Union[Module, Callable]] = None,
         test_loss_fn: Optional[Union[Module, Callable]] = None,
-        sample_wise_grads_per_batch: bool = False,
         projection_dim: Optional[int] = 50,
         layer_block_projection_dim: Optional[int] = None,
         seed: int = 0,
@@ -76,6 +75,7 @@ class FastKFACEmbedder(EmbedderBase):
         projection_on_cpu: bool = True,
         show_progress: bool = False,
         per_layer_blocks: int = 1,
+        accumulate_device: Optional[str] = None,
     ):
         """
         Args:
@@ -90,23 +90,15 @@ class FastKFACEmbedder(EmbedderBase):
                     Default: None
             loss_fn (Module or Callable, optional): The loss function used to compute the
                     Hessian.  It should behave like a "reduction" loss function, where
-                    reduction is either 'sum', 'mean', or 'none', and have a
+                    reduction is either 'sum', or 'mean', and have a
                     `reduction` attribute.  For example, `BCELoss(reduction='sum')`
-                    could be a valid loss function.  See the caveat under the
-                    description for the `sample_wise_grads_per_batch` argument.  If None,
-                    the loss is the output of `model`, which is assumed to be a single
-                    scalar for a batch.
+                    could be a valid loss function, but `BCELoss(reduction='none')` is
+                    not valid.  If None, the loss is the output of `model`, which is
+                    assumed to be a single scalar for a batch.
                     Default: None
             test_loss_fn: (Module or callable, optional): The loss function used to compute
                     the 'influence explanations'.  This argument should not matter for
                     most use cases.  If None, is assumed to be the same as `loss_fn`.
-            sample_wise_grads_per_batch (bool, optional): Whether to use an efficiency
-                    trick to compute the per-example gradients.  If True, `loss_fn` must
-                    behave like a `reduction='sum'` or `reduction='sum'` loss function,
-                    i.e. `BCELoss(reduction='sum')` or `BCELoss(reduction='mean')`.  If
-                    False, `loss_fn` must behave like a `reduction='none'` loss
-                    function, i.e. `BCELoss(reduction='none')`.
-                    Default: True
             projection_dim (int, optional): Directly determines the embedding's
                     dimension, if not None.  If None and `layer_block_projection_dim`
                     is not None, the latter specifies the embedding dimension.  If both
@@ -140,6 +132,16 @@ class FastKFACEmbedder(EmbedderBase):
             per_layer_blocks (int, optional): The number of blocks in the block diagonal
                     approximation of the Hessian within a single layer.
                     Default: 1
+            accumulate_device (str, optional): In the `fit` method, this implementation
+                    makes a pass through the training data to calculate, for different
+                    layers, the average outer product of the layer input, as well as
+                    the average outer product of the layer output gradient.  This
+                    argument determines which device those averages should be stored on.
+                    If None, they will be stored on the same device as `model`.  If
+                    a device, i.e. 'cuda', they will be stored on that device.  It is
+                    recommended to leave this argument to be None unless you find that
+                    those outer products are not fitting in GPU memory.
+                    Default: None
 
         """
         self.model = model
@@ -147,7 +149,6 @@ class FastKFACEmbedder(EmbedderBase):
         self.loss_fn = loss_fn
         # If test_loss_fn not provided, it's assumed to be same as loss_fn
         self.test_loss_fn = loss_fn if test_loss_fn is None else test_loss_fn
-        self.sample_wise_grads_per_batch = sample_wise_grads_per_batch
 
         # we save the reduction type for both `loss_fn` and `test_loss_fn` because
         # 1) if `sample_wise_grads_per_batch` is true, the reduction type is needed
@@ -156,20 +157,21 @@ class FastKFACEmbedder(EmbedderBase):
 
         # check `loss_fn`
         self.reduction_type = _check_loss_fn(
-            loss_fn, "loss_fn", sample_wise_grads_per_batch
-        )
+            loss_fn, "loss_fn", sample_wise_grads_per_batch=None
+        )  # the behavior when `sample_wise_grads_per_batch` is None is how we want to
+        # check the loss function - basically that it is either a sum or mean reduction
+        # loss function.  TODO: consider making custom checking function
+
         # check `test_loss_fn` if it was provided
         if not (test_loss_fn is None):
             self.test_reduction_type = _check_loss_fn(
-                test_loss_fn, "test_loss_fn", sample_wise_grads_per_batch
+                test_loss_fn, "test_loss_fn", sample_wise_grads_per_batch=None
             )
         else:
             self.test_reduction_type = self.reduction_type
 
         self.layer_modules = _set_active_parameters(
-            model,
-            layers,
-            supported_layers=SUPPORTED_LAYERS
+            model, layers, supported_layers=SUPPORTED_LAYERS
         )
 
         # below initializations are specific to `KFACEmbedder`
@@ -187,6 +189,7 @@ class FastKFACEmbedder(EmbedderBase):
 
         self.projection_on_cpu = projection_on_cpu
         self.show_progress = show_progress
+        self.accumulate_device = accumulate_device
 
         # determine how to split each layer's parameters
         if per_layer_blocks == 1:
@@ -220,9 +223,9 @@ class FastKFACEmbedder(EmbedderBase):
 
     def _retrieve_projections_fast_kfac_embedder_helper(
         self,
-        dataloader: DataLoader,
         projection_on_cpu: bool,
-        show_progress: bool,
+        layer_As: List[List[Tensor]],
+        layer_Ss: List[List[Tensor]],
         layer_block_projection_dim: Optional[int] = None,
         eigenvalue_threshold: Optional[int] = None,
         return_eigenvalue_only: bool = False,
@@ -234,12 +237,162 @@ class FastKFACEmbedder(EmbedderBase):
         `layer_block_projection_dim`, 3) extract eigenvectors / eigenvalues for which
         the eigenvalue is above `eigenvalue_threshold`.
         """
-        # get A and S for each layer
+        # # get A and S for each layer
+        # logging.info("compute training data statistics")
+        # layer_accumulators = [
+        #     _LayerHessianFlattenedIndependentAcumulator(layer, split_two_d)
+        #     for (layer, split_two_d) in zip(self.layer_modules, self.layer_split_two_ds)
+        # ]
+        # # accumulate results on cpu because not much computation to do, so save memory
+        # _accumulate_with_layer_inputs_and_output_gradients(
+        #     layer_accumulators,
+        #     self.model,
+        #     dataloader,
+        #     self.layer_modules,
+        #     self.reduction_type,
+        #     self.loss_fn,
+        #     show_progress,
+        #     # accumulate_device="cpu",
+        #     accumulate_device=None,
+        # )
+        # # store A and S over all layers and over all blocks in layers
+        # layer_As = [
+        #     [
+        #         accumulator.results()
+        #         for accumulator in layer_accumulator.layer_A_accumulators
+        #     ]
+        #     for layer_accumulator in layer_accumulators
+        # ]
+        # layer_Ss = [
+        #     [
+        #         accumulator.results()
+        #         for accumulator in layer_accumulator.layer_S_accumulators
+        #     ]
+        #     for layer_accumulator in layer_accumulators
+        # ]
+
+        with torch.no_grad():
+
+            # for each layer, and for each block in a layer, extract factors of decomposition
+            # TODO: consider adjusting `projection_dim` based on the number of blocks
+            layer_R_A_factors = []
+            layer_R_S_factors = []
+            layer_R_ls = []
+            # layer_R_scales = []
+
+            projection_device = (
+                torch.device("cpu") if projection_on_cpu else self.model_device
+            )
+
+            logging.info("compute factors")
+
+            for k, (layer_A, layer_S, layer) in enumerate(
+                zip(layer_As, layer_Ss, self.layer_modules)
+            ):
+                logging.info(f"compute factors for layer {layer}")
+
+                R_A_factors = []
+                R_S_factors = []
+                R_ls = []
+                # R_scales = []
+
+                for A, S in zip(layer_A, layer_S):
+                    # do SVD of A and S.  don't truncate based `hessian_inverse_tol`
+                    A_ls, A_vs = _top_eigen(
+                        A,
+                        None,  # TODO: to save memory, use heuristic to limit returns
+                        self.hessian_reg,
+                        0,
+                    )
+
+                    S_ls, S_vs = _top_eigen(
+                        S,
+                        None,
+                        self.hessian_reg,
+                        0,
+                    )
+                    # figure out top eigenvalues of `kron(A, S)` and the which factors' outer
+                    # product generates the corresponding eigenvectors
+                    ls = torch.outer(A_ls, S_ls)
+                    num_S_factors = len(S_ls)
+
+                    # figure out indices of eigenvalues / eigenvectors to keep
+                    if eigenvalue_threshold is None:
+                        # if keeping based on `layer_block_projection_dim`
+                        flattened_indices_to_keep = torch.argsort(
+                            ls.view(-1), descending=True
+                        )[:layer_block_projection_dim]
+                        # assert layer_block_projection_dim is None
+                    else:
+                        # if keeping based on `eigenvalue_threshold`
+                        # TODO: can sort so that largest eigenvalue is first
+                        eps = 1e-4
+                        flattened_indices_to_keep = [
+                            idx
+                            for (idx, l) in enumerate(ls.view(-1))
+                            if l > (eigenvalue_threshold + eps)
+                        ]
+
+                    top_ijs = [
+                        (
+                            int(flattened_idx / num_S_factors),
+                            flattened_idx % num_S_factors,
+                        )
+                        for flattened_idx in flattened_indices_to_keep
+                    ]
+
+                    # top_ijs = [
+                    #     (int(flattened_pos / num_S_factors), flattened_pos % num_S_factors)
+                    #     for flattened_pos in torch.argsort(ls.view(-1), descending=True)[
+                    #         :projection_dim
+                    #     ]
+                    # ]
+
+                    top_ls = torch.Tensor([ls[i, j] for (i, j) in top_ijs])
+
+                    # add factors for both if not `return_eigenvalue_only`.  otherwise,
+                    # return dummy's for the factors
+                    if not return_eigenvalue_only:
+                        # appending the factors for a block
+                        if len(top_ijs) == 0:
+                            # if not using factors from block, append dummy value of `None`
+                            R_A_factors.append(None)
+                            R_S_factors.append(None)
+                        else:
+                            R_A_factors.append(
+                                torch.stack(
+                                    [A_vs[:, i] for (i, _) in top_ijs], dim=0
+                                ).to(device=projection_device)
+                            )
+                            R_S_factors.append(
+                                torch.stack(
+                                    [S_vs[:, j] for (_, j) in top_ijs], dim=0
+                                ).to(device=projection_device)
+                            )
+
+                    R_ls.append(top_ls.to(device=projection_device))
+                    # R_scales.append((top_ls**-0.5).to(device=projection_device))
+
+                layer_R_A_factors.append(R_A_factors)
+                layer_R_S_factors.append(R_S_factors)
+                layer_R_ls.append(R_ls)
+                # layer_R_scales.append(R_scales)
+
+            return layer_R_A_factors, layer_R_S_factors, layer_R_ls
+            # return FastKFACEmbedderFitResults(
+            #     layer_R_A_factors, layer_R_S_factors, layer_R_scales
+            # )
+
+    def _get_As_and_Ss(self, dataloader: DataLoader, show_progress: bool):
+        """
+        computes As and Ss, certain training data statistics
+        """
         logging.info("compute training data statistics")
         layer_accumulators = [
             _LayerHessianFlattenedIndependentAcumulator(layer, split_two_d)
             for (layer, split_two_d) in zip(self.layer_modules, self.layer_split_two_ds)
         ]
+        # accumulate results on cpu because not much computation to do, so save memory
         _accumulate_with_layer_inputs_and_output_gradients(
             layer_accumulators,
             self.model,
@@ -248,6 +401,7 @@ class FastKFACEmbedder(EmbedderBase):
             self.reduction_type,
             self.loss_fn,
             show_progress,
+            accumulate_device=self.accumulate_device,
         )
         # store A and S over all layers and over all blocks in layers
         layer_As = [
@@ -265,111 +419,7 @@ class FastKFACEmbedder(EmbedderBase):
             for layer_accumulator in layer_accumulators
         ]
 
-        # for each layer, and for each block in a layer, extract factors of decomposition
-        # TODO: consider adjusting `projection_dim` based on the number of blocks
-        layer_R_A_factors = []
-        layer_R_S_factors = []
-        layer_R_ls = []
-        # layer_R_scales = []
-
-        projection_device = (
-            torch.device("cpu") if projection_on_cpu else self.model_device
-        )
-
-        # logging.info("compute factors")
-        for k, (layer_A, layer_S, layer) in enumerate(
-            zip(layer_As, layer_Ss, self.layer_modules)
-        ):
-            logging.info(f"compute factors for layer {layer}")
-
-            R_A_factors = []
-            R_S_factors = []
-            R_ls = []
-            # R_scales = []
-
-            for A, S in zip(layer_A, layer_S):
-                # do SVD of A and S.  don't truncate based `hessian_inverse_tol`
-                A_ls, A_vs = _top_eigen(
-                    A,
-                    None,  # TODO: to save memory, use heuristic to limit returns
-                    self.hessian_reg,
-                    0,
-                )
-
-                S_ls, S_vs = _top_eigen(
-                    S,
-                    None,
-                    self.hessian_reg,
-                    0,
-                )
-                # figure out top eigenvalues of `kron(A, S)` and the which factors' outer
-                # product generates the corresponding eigenvectors
-                ls = torch.outer(A_ls, S_ls)
-                num_S_factors = len(S_ls)
-
-                # figure out indices of eigenvalues / eigenvectors to keep
-                if eigenvalue_threshold is None:
-                    # if keeping based on `layer_block_projection_dim`
-                    flattened_indices_to_keep = torch.argsort(
-                        ls.view(-1), descending=True
-                    )[:layer_block_projection_dim]
-                    # assert layer_block_projection_dim is None
-                else:
-                    # if keeping based on `eigenvalue_threshold`
-                    # TODO: can sort so that largest eigenvalue is first
-                    eps = 1e-4
-                    flattened_indices_to_keep = [
-                        idx
-                        for (idx, l) in enumerate(ls.view(-1))
-                        if l > (eigenvalue_threshold + eps)
-                    ]
-
-                top_ijs = [
-                    (int(flattened_idx / num_S_factors), flattened_idx % num_S_factors)
-                    for flattened_idx in flattened_indices_to_keep
-                ]
-
-                # top_ijs = [
-                #     (int(flattened_pos / num_S_factors), flattened_pos % num_S_factors)
-                #     for flattened_pos in torch.argsort(ls.view(-1), descending=True)[
-                #         :projection_dim
-                #     ]
-                # ]
-
-                top_ls = torch.Tensor([ls[i, j] for (i, j) in top_ijs])
-
-                # add factors for both if not `return_eigenvalue_only`.  otherwise,
-                # return dummy's for the factors
-                if not return_eigenvalue_only:
-                    # appending the factors for a block
-                    if len(top_ijs) == 0:
-                        # if not using factors from block, append dummy value of `None`
-                        R_A_factors.append(None)
-                        R_S_factors.append(None)
-                    else:
-                        R_A_factors.append(
-                            torch.stack([A_vs[:, i] for (i, _) in top_ijs], dim=0).to(
-                                device=projection_device
-                            )
-                        )
-                        R_S_factors.append(
-                            torch.stack([S_vs[:, j] for (_, j) in top_ijs], dim=0).to(
-                                device=projection_device
-                            )
-                        )
-
-                R_ls.append(top_ls.to(device=projection_device))
-                # R_scales.append((top_ls**-0.5).to(device=projection_device))
-
-            layer_R_A_factors.append(R_A_factors)
-            layer_R_S_factors.append(R_S_factors)
-            layer_R_ls.append(R_ls)
-            # layer_R_scales.append(R_scales)
-
-        return layer_R_A_factors, layer_R_S_factors, layer_R_ls
-        # return FastKFACEmbedderFitResults(
-        #     layer_R_A_factors, layer_R_S_factors, layer_R_scales
-        # )
+        return layer_As, layer_Ss
 
     def _retrieve_projections_fast_kfac_embedder(
         self,
@@ -384,6 +434,9 @@ class FastKFACEmbedder(EmbedderBase):
 
         A helper function is used to return embeddings of the desired dimension.
         """
+        # first, make a pass through data to compute A and S
+        layer_As, layer_Ss = self._get_As_and_Ss(dataloader, show_progress)
+
         if (self.layer_block_projection_dim is not None) or (
             self.projection_dim is None and self.layer_block_projection_dim is None
         ):
@@ -394,9 +447,9 @@ class FastKFACEmbedder(EmbedderBase):
                 layer_R_S_factors,
                 layer_R_ls,
             ) = self._retrieve_projections_fast_kfac_embedder_helper(
-                dataloader,
                 projection_on_cpu,
-                show_progress,
+                layer_As,
+                layer_Ss,
                 layer_block_projection_dim=self.layer_block_projection_dim,
                 eigenvalue_threshold=None,
                 return_eigenvalue_only=False,
@@ -406,9 +459,9 @@ class FastKFACEmbedder(EmbedderBase):
             # first get all eigenvalues to get eigenvalue threshold
             logging.info("compute factors, first pass to get eigenvalue threshold")
             _, _, layer_R_ls = self._retrieve_projections_fast_kfac_embedder_helper(
-                dataloader,
                 projection_on_cpu,
-                show_progress,
+                layer_As,
+                layer_Ss,
                 layer_block_projection_dim=None,  # TODO: for now return all eigenvalues
                 eigenvalue_threshold=None,
                 return_eigenvalue_only=True,
@@ -428,9 +481,9 @@ class FastKFACEmbedder(EmbedderBase):
                 layer_R_S_factors,
                 layer_R_ls,
             ) = self._retrieve_projections_fast_kfac_embedder_helper(
-                dataloader,
                 projection_on_cpu,
-                show_progress,
+                layer_As,
+                layer_Ss,
                 layer_block_projection_dim=None,  # is ignored because `eigenvalue_threshold` is specified
                 eigenvalue_threshold=eigenvalue_threshold,
                 return_eigenvalue_only=False,
@@ -472,6 +525,8 @@ class FastKFACEmbedder(EmbedderBase):
         # define a helper function that returns the embeddings for a batch
         def get_batch_embeddings(batch):
             # for each layer, get the input and output gradient
+            # put them on model device, since computations won't take too much memory
+            # TODO: check this, i.e. if memory is same as in `fit`
             layer_capture_accumulators = (
                 _accumulate_with_layer_inputs_and_output_gradients(
                     [_LayerCaptureAccumulator() for _ in self.layer_modules],
@@ -481,6 +536,7 @@ class FastKFACEmbedder(EmbedderBase):
                     reduction_type,
                     loss_fn,
                     show_progress=False,
+                    accumulate_device=self.model_device,
                 )
             )
             layer_inputs = [
@@ -523,7 +579,9 @@ class FastKFACEmbedder(EmbedderBase):
                         # of `None` for them, return embedding with width of 0
                         if block_A_factors is None:
                             batch_size = block_layer_input.shape[0]
-                            return torch.zeros((batch_size, 0))
+                            return torch.zeros(
+                                (batch_size, 0), device=self.model_device
+                            )
 
                         # for each factor, simulate dot-product with `outer(S, A)`
                         def get_batch_layer_block_coordinates(
@@ -563,6 +621,39 @@ class FastKFACEmbedder(EmbedderBase):
                             ],
                             dim=1,
                         )
+
+                    # get_batch_layer_block_embeddings(
+                    #     next(iter(R_A_factors)),
+                    #     next(iter(R_S_factors)),
+                    #     next(iter(R_scales)),
+                    #     next(iter(layer_split_two_d(layer_input))),
+                    #     next(iter(layer_split_two_d(layer_output_gradient))),
+                    # )
+
+                    # stuff = [
+                    #     get_batch_layer_block_embeddings(
+                    #         block_A_factors,
+                    #         block_S_factors,
+                    #         block_scales,
+                    #         block_layer_input,
+                    #         block_layer_output_gradient,
+                    #     )
+                    #     for (
+                    #         block_A_factors,
+                    #         block_S_factors,
+                    #         block_scales,
+                    #         block_layer_input,
+                    #         block_layer_output_gradient,
+                    #     ) in zip(
+                    #         R_A_factors,
+                    #         R_S_factors,
+                    #         R_scales,
+                    #         layer_split_two_d(layer_input),
+                    #         layer_split_two_d(layer_output_gradient),
+                    #     )
+                    # ]
+                    # import pdb
+                    # pdb.set_trace()
 
                     return torch.cat(
                         [
@@ -636,16 +727,54 @@ class FastKFACEmbedder(EmbedderBase):
         with open(path, "wb") as f:
             pickle.dump(self.fit_results, f)
 
-    def load(self, path: str):
+    def load(self, path: str, projection_on_cpu: bool = True):
         """
         Loads the results saved by the `save` method.  Instead of calling `fit`, one
         can instead call `load`.
 
         Args:
             path (str): path of file to load results from.
+            projection_on_cpu (bool, optional): whether to load the results onto cpu.
+                    results will not be moved onto gpu if model is not on gpu.
+                    Default: True
         """
         with open(path, "rb") as f:
             self.fit_results = pickle.load(f)
+        projection_device = (
+            torch.device("cpu") if projection_on_cpu else self.model_device
+        )
+        self._move_fit_results(self.fit_results, projection_device)
+
+    def _move_fit_results(self, fit_results, device):
+        fit_results.layer_R_A_factors = [
+            [
+                (
+                    block_A_factors.to(device=device)
+                    if block_A_factors is not None
+                    else None
+                )
+                for block_A_factors in R_A_factors
+            ]
+            for R_A_factors in fit_results.layer_R_A_factors
+        ]
+        fit_results.layer_R_S_factors = [
+            [
+                (
+                    block_S_factors.to(device=device)
+                    if block_S_factors is not None
+                    else None
+                )
+                for block_S_factors in R_S_factors
+            ]
+            for R_S_factors in fit_results.layer_R_S_factors
+        ]
+        fit_results.layer_R_scales = [
+            [
+                (block_scales.to(device=device) if block_scales is not None else None)
+                for block_scales in R_scales
+            ]
+            for R_scales in fit_results.layer_R_scales
+        ]
 
     def reset(self):
         """

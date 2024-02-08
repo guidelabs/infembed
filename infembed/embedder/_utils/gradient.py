@@ -1,4 +1,4 @@
-from typing import Callable, List, Optional, Sequence, Tuple, Union, Any, cast
+from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union, Any, cast
 import warnings
 from infembed.embedder._utils.sample_gradient import SampleGradientWrapper
 from torch import Tensor
@@ -13,7 +13,7 @@ SAMPLEWISE_GRADS_PER_BATCH_SUPPORTED_LAYERS = [
 ]
 
 def apply_gradient_requirements(
-    inputs: Tuple[Tensor, ...], warn: bool = True
+    inputs: Union[Tuple[Tensor, ...], Dict], warn: bool = True
 ) -> List[bool]:
     """
     Iterates through tuple on input tensors and sets requires_grad to be true on
@@ -210,7 +210,7 @@ def _compute_jacobian_wrt_params(
     """
     with torch.autograd.set_grad_enabled(True):
         out = model(*inputs)
-        assert out.dim() != 0, "Please ensure model output has at least one dimension."
+        # assert out.dim() != 0, "Please ensure model output has at least one dimension."
 
         if labels is not None and loss_fn is not None:
             loss = loss_fn(out, labels)

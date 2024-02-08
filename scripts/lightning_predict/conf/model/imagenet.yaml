@@ -1,0 +1,18 @@
+_target_: models._utils.common.load_model
+model:
+  _target_: models._utils.common.GenericLightningModel
+  model:
+    _target_: torchvision.models.resnet18
+    # weights:
+    #   _target_: torchvision.models.ResNet18_Weights.DEFAULT
+  loss_fn: 
+    _target_: torch.nn.CrossEntropyLoss
+    reduction: 'sum'
+  batch_to_x:
+    _target_: data._utils.common.default_batch_to_x
+    _partial_: true
+  batch_to_target:
+    _target_: data._utils.common.default_batch_to_target
+    _partial_: true
+device: 'cuda:0'
+eval: true

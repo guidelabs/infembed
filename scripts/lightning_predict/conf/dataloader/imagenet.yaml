@@ -1,0 +1,15 @@
+_target_: torch.utils.data.DataLoader
+dataset: 
+  _target_: torchvision.datasets.ImageNet
+  root: '/home/ubuntu/Documents/infembed/files/imagenet'
+  split: 'val'
+collate_fn: 
+  _target_: data._utils.common.ComposeCollateFn
+  f: 
+    _target_: data._utils.common.keep_pre
+    _partial_: true
+  g:
+    _target_: data._core.imagenet.ImagenetCollateFn
+    device: 'cuda:0'
+batch_size: 16
+num_workers: 47

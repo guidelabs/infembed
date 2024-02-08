@@ -1,0 +1,2 @@
+_target_: models._core.agnews.AGNewsLoss
+reduction: 'none'

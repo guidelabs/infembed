@@ -1,0 +1,30 @@
+_target_: models._utils.common.load_model
+model:
+  _target_: models._core.decoder_llm.DecoderLightningModule
+  decoder:
+    _target_: models._core.decoder_llm.constructor
+    model_dim: 128
+    key_dim: 32
+    value_dim: 32
+    num_heads: 4
+    num_layers: 4
+    dropout: 0.0
+    hidden_dim: 512
+    # num_tokens: 107
+    num_tokens: 256
+    max_len: 64
+eval: true
+checkpoints_load_func: 
+  _target_: models._utils.common.default_checkpoints_load_func
+  key: state_dict
+  # _target_: models._utils.common.lightning_checkpoints_load_func
+  _partial_: true
+# checkpoint: '/home/ubuntu/Documents/infembed/examples/shakespeare/hydra_outputs/lightning_train/test/lr_0.01/lightning_logs/25hd2hwp/checkpoints/epoch=1-step=994.ckpt'
+# checkpoint: '/home/ubuntu/Documents/infembed/examples/shakespeare/hydra_outputs/lightning_train/test/0/lightning_logs/g88yw0cq/checkpoints/epoch=0-step=8000.ckpt'
+checkpoint: '/home/ubuntu/Documents/infembed/examples/shakespeare/hydra_outputs/lightning_train/test/0/lightning_logs/csjk7rd0/checkpoints/epoch=0-step=8000.ckpt'
+# _target_: models._utils.common.lightning_load_model
+# load_from_checkpoint_fn: 
+#   _target_: models._core.decoder_llm.DecoderLightningModule.load_from_checkpoint
+#   _partial_: true
+# path: '/home/ubuntu/Documents/infembed/examples/shakespeare/hydra_outputs/lightning_train/test/lr_0.01/lightning_logs/25hd2hwp/checkpoints/epoch=1-step=994.ckpt'
+# eval: true
