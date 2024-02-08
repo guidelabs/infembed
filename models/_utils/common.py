@@ -8,12 +8,21 @@ import pytorch_lightning as pl
 def default_checkpoints_load_func(model, path, key=None):
     state = torch.load(open(path, "rb"))
     state_dict = state if key is None else state[key]
-    model.load_state_dict(state_dict)
+    model.load_state_dict(state_dict, strict=False)
 
 
 def lightning_checkpoints_load_func(model, path):
-    raise NotImplementedError
+    # raise NotImplementedError
     model.load_from_checkpoint(path)
+
+
+def lightning_load_model(load_from_checkpoint_fn, path, eval):
+    model = load_from_checkpoint_fn(path)
+    if eval:
+        model.eval()
+    else:
+        model.train()
+    return model
 
 
 def load_model(

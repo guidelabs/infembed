@@ -130,7 +130,7 @@ class DecoderLLMCollateFn:
                 d["input_ids"][:, :-1],
             ],
             dim=1,
-        )
+        )[:,:d["input_ids"].shape[1]]
         # create the mask used for generation during training. it's the same for each example, so is 2D
         mask = subsequent_mask(shifted_input_ids.shape[1])
         return {
@@ -167,4 +167,18 @@ class EmptyTextDataset(IterableDataset):
 
     def __iter__(self):
         for _ in range(self.num_examples):
-            yield ''
+            yield ' '
+
+
+class IterableDatasetToDataset(Dataset):
+    def __init__(self, dataset):
+        self._dataset = [batch for batch in dataset]
+
+    def __getitem__(self, i):
+        return self._dataset[i]
+    
+
+def character_tokenizer():
+    from transformers import AutoTokenizer
+    tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-neo-125M")
+    return tokenizer.train_new_from_iterator([], vocab_size=0, initial_alphabet=[])

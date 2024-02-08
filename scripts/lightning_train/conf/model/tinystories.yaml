@@ -16,16 +16,12 @@ loss_fn:
     _target_: torch.nn.KLDivLoss
     reduction: 'sum'
   smoothing: 0.1
-# configure_optimizers:
-#   _target_: models._utils.common.GenericConfigureOptimizers
-#   parameters_getter:
-#     _partial_: true
-#     _target_: models._utils.common.get_all_parameters
-#   optimizer_constructor:
-#     _partial_: true
-#     _target_: torch.optim.AdamW
-#     lr: 1e-3
-#     betas:
-#     - 0.9
-#     - 0.99
-#     weight_decay: 1e-1
+configure_optimizers:
+  _target_: models._utils.common.GenericConfigureOptimizers
+  parameters_getter:
+    _partial_: true
+    _target_: models._utils.common.get_all_parameters
+  optimizer_constructor:
+    _partial_: true
+    _target_: torch.optim.Adam
+    lr: 1e-3

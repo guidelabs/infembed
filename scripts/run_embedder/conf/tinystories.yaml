@@ -15,4 +15,4 @@ hydra:
 #    dir: outputs/fast_kfac
     dir: /home/ubuntu/Documents/infembed/examples/tinystories/hydra_outputs/run_embedder/test
 #    dir: outputs/spotcheck/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
-#    subdir: trial_${trial.trial}
+    subdir: dim=${embedder_constructor.projection_dim}/blocks=${embedder_constructor.per_layer_blocks}

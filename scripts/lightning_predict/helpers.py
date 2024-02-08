@@ -1,6 +1,7 @@
 from typing import Callable, Dict, List
 import torch
-from pytorch_lightning.callbacks import BasePredictionWriter
+# from pytorch_lightning.callbacks import BasePredictionWriter
+from lightning.pytorch.callbacks import BasePredictionWriter
 import torchmetrics
 import pandas as pd
 import os
