@@ -108,6 +108,7 @@ def _set_active_parameters(
     """
     sets relevant parameters, as indicated by `layers`, to have `requires_grad=True`,
     and returns relevant modules.
+
     if `layers` is None and `supported_layers` is None, changes `layers` to be `model`
     if `layers is None and `supported_layers` is not None, returns supported layers in
     `model`.
@@ -130,11 +131,26 @@ def _set_active_parameters(
         layer_modules = [_get_module_from_name(model, layer) for layer in layers]
 
     if supported_layers is not None:
-        # have to return supported layers only.
+        # have to return supported layers only.  there will be no duplicate layers
+        # because they need to be supported layers
         if layers is None:
             layers_and_modules = model.named_modules()
         else:
-            layers_and_modules = zip(layers, layer_modules)
+            # want to get all layers which are within `layer_modules`, as well as names
+            # iterate through all modules, and keep a map from module to name
+            # then associate each module with the longest name
+            modules_and_layers = {}
+            for layer, layer_module in zip(layers, layer_modules):
+                if layer != "":
+                    for sub_layer, sub_layer_module in layer_module.named_modules():
+                        if True or sub_layer != "":
+                            modules_and_layers[sub_layer_module] = f"{layer}.{sub_layer}"
+            layers_and_modules = [
+                (layer, layer_module)
+                for (layer_module, layer) in modules_and_layers.items()
+            ]
+
+            # layers_and_modules = zip(layers, layer_modules)
 
         supported_layers_and_modules = [
             (layer, layer_module)
@@ -150,6 +166,7 @@ def _set_active_parameters(
 
     if layers is None:
         # `supported_layers` was None and `layers` not provided
+        # there will be no duplicate layers, since the only layer is the entire model
         layers = ["entire model"]
         layer_modules = [model]
 
@@ -161,6 +178,8 @@ def _set_active_parameters(
                     "Setting required grads for layer: {}, name: {}".format(layer, name)
                 )
                 param.requires_grad = True
+
+    print('consider gradients in the following layers:', layer_modules)
     return layer_modules
 
 
