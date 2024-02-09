@@ -8,6 +8,7 @@ import lightning.pytorch as pl
 import copy
 import torch
 from data._utils.common import subsequent_mask
+from torch.distributions.categorical import Categorical
 
 
 ### define attention ###
@@ -38,11 +39,10 @@ class Attention(nn.Module):
         _keys = self.key(keys)
         _values = self.value(values)  # batch size x seq length x `value_dim`
         # compute pairwise dot-products
-        weights = torch.sum(_querys[:, :, None, :] * _keys[:, None, :, :], dim=3)
+        weights = torch.matmul(_querys, _keys.transpose(2, 1))
+        # below is the slow way to calculate the above `matmul`
+        # weights = torch.sum(_querys[:, :, None, :] * _keys[:, None, :, :], dim=3)
         # apply mask
-        # import pdb
-        # pdb.set_trace()
-        # weights = weights * mask[None, :, :]
         weights = weights.masked_fill(mask[None, :, :] == 0, -1e9)
         # normalize for each query
         weights = F.softmax(weights, dim=2)  # batch size X seq length x seq length
@@ -201,7 +201,9 @@ class Generator(nn.Module):
         self.projection = nn.Linear(model_dim, num_tokens)
 
     def forward(self, x):
-        return F.log_softmax(self.projection(x), dim=2)
+        return self.projection(x)
+        # push log_softmax into loss function
+        # return F.log_softmax(self.projection(x), dim=2) 
 
 
 class Decoder(nn.Module):
@@ -281,16 +283,15 @@ class LLMCrossEntropyLoss(nn.Module):
         # get per-example, per-position losses
         # losses = F.cross_entropy(output, labels, reduction='none')
         losses = F.cross_entropy(
-            output.view(-1, output.shape[-1]), labels.view(-1), reduction="none"
+            output.reshape(-1, output.shape[-1]), labels.reshape(-1), reduction="none"
         )
         if False:
             brute = sum([F.cross_entropy(_output, _labels, reduction='sum') for (_output, _labels) in zip(output, labels)])
             print(losses.sum(), brute)
-            import pdb
-            pdb.set_trace()
+
         # multiply by attention mask to ignore padding locations
         # losses *= attention_mask
-        losses *= attention_mask.view(-1)
+        losses *= attention_mask.reshape(-1)
         # sum up losses over non-padding locations
         loss = losses.sum()
         # divide by total number of non-padding locations
@@ -344,33 +345,44 @@ class LabelSmoothingLoss(nn.Module):
 
 
 class DecoderLightningModule(L.LightningModule):
-    def __init__(self, decoder, loss_fn=None, configure_optimizers=None):
+    def __init__(self, decoder, loss_fn=None, configure_optimizers=None, scheduler_constructor=None):
         super().__init__()
         self.decoder, self.loss_fn, self._configure_optimizers = (
             decoder,
             loss_fn,
             configure_optimizers,
         )
+        self.scheduler_constructor = scheduler_constructor
+
+    _STEP_DO_NOT_LOG_KEYS = ["output", "attention_mask", "labels", "input_ids", "mask"]
 
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(
-            self.parameters(), lr=1e-3, betas=(0.9, 0.99), weight_decay=1e-1
-        )
-        from torch.optim.lr_scheduler import CosineAnnealingLR
+        # optimizer = torch.optim.AdamW(
+        #     self.parameters(), lr=1e-3, betas=(0.9, 0.99), weight_decay=1e-1
+        # )
+        # from torch.optim.lr_scheduler import CosineAnnealingLR
 
-        scheduler = CosineAnnealingLR(optimizer, T_max=8000, eta_min=6e-5)
-        return [optimizer], [scheduler]
+        # scheduler = CosineAnnealingLR(optimizer, T_max=8000, eta_min=6e-5)
+
+        optimizer = self._configure_optimizers(self)
+        if self.scheduler_constructor is None:
+            return optimizer
+        else:
+            scheduler = self.scheduler_constructor(optimizer=optimizer)
+            return [optimizer], [scheduler]
 
     def _step(self, batch, batch_idx):
         d = self.forward(batch)
         return {
-            "loss": self.loss_fn(d["output"], batch["attention_mask"], batch["labels"])
+            "loss": self.loss_fn(d["output"], batch["attention_mask"], batch["labels"]),
+            **d,
+            **batch,
         }
 
     def training_step(self, batch, batch_idx):
         d = self._step(batch, batch_idx)
         self.log_dict(
-            {f"train_{key}": val for (key, val) in d.items() if key[0] != "_"},
+            {f"train_{key}": val for (key, val) in d.items() if key[0] != "_" and key not in self._STEP_DO_NOT_LOG_KEYS},
             on_step=True,
             on_epoch=True,
         )
@@ -379,18 +391,17 @@ class DecoderLightningModule(L.LightningModule):
     def validation_step(self, batch, batch_idx):
         d = self._step(batch, batch_idx)
         self.log_dict(
-            {f"validation_{key}": val for (key, val) in d.items() if key[0] != "_"},
+            {f"validation_{key}": val for (key, val) in d.items() if key[0] != "_" and key not in self._STEP_DO_NOT_LOG_KEYS},
             on_step=True,
             on_epoch=True,
         )
         return d
 
     def prediction_step(self, batch, batch_idx):
-        import pdb
-        pdb.set_trace()
+        assert False
         d = self._step(batch, batch_idx)
         self.log_dict(
-            {f"prediction_{key}": val for (key, val) in d.items() if key[0] != "_"},
+            {f"prediction_{key}": val for (key, val) in d.items() if key[0] != "_" and key not in self._STEP_DO_NOT_LOG_KEYS},
             on_step=True,
             on_epoch=True,
         )
@@ -414,7 +425,7 @@ class GreedyDecoder:
     def __init__(self, max_len):
         self.max_len = max_len
 
-    def __call__(self, model, eos_token, input_ids):
+    def __call__(self, model, eos_token, input_ids, temperature=None):
         """
         `input_ids` is 1D, representing a single example.
         """
@@ -430,10 +441,18 @@ class GreedyDecoder:
                     )
                 )
             )
-            output = output[-1]
-            top_id = torch.argmax(output)
+            output = output[-1] # get logits in last layer
+            if temperature is None or temperature == 0:
+                top_id = torch.argmax(output)
+            else:
+                output = output / temperature
+                top_id = Categorical(logits = output / temperature).sample()
             if top_id == eos_token:
                 break
             input_ids = torch.cat([input_ids, top_id.unsqueeze(0)])
             output_ids.append(top_id)
         return torch.Tensor(output_ids).long()
+
+
+def LLM_get_preds(out):
+    return out['output'].cpu()

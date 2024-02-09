@@ -17,6 +17,7 @@ class LimitIterableDataset(IterableDataset):
     def __iter__(self):
         for i, batch in enumerate(self.dataset):
             if self.num is not None and i >= self.num:
+                print('breaking', i)
                 return
             yield batch
 
@@ -153,11 +154,21 @@ class DatasetFromText(IterableDataset):
 
     def __iter__(self):
         t = ""
+        num_yield = 0
+        num_line = 0
         for line in open(self.path, "r"):
             t += line
+            num_line += 1
             if len(t) > self.text_size:
                 yield t[: self.text_size]
                 t = t[self.text_size :]
+                num_yield += 1
+        while len(t) > 0:
+            yield t[: self.text_size]
+            t = t[self.text_size :]
+            num_yield += 1
+        print(num_yield, num_line)
+        
 
 
 class EmptyTextDataset(IterableDataset):
@@ -184,3 +195,11 @@ def character_tokenizer():
     from transformers import AutoTokenizer
     tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-neo-125M")
     return tokenizer.train_new_from_iterator([], vocab_size=0, initial_alphabet=[])
+
+
+IGNORE_INDEX = -100
+
+
+def LLM_get_target(batch):
+    labels = batch['labels']
+    return labels.masked_fill(batch['attention_mask'] == 0, IGNORE_INDEX).cpu()
