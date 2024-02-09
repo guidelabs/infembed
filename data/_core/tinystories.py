@@ -3,6 +3,11 @@ from data._utils.common import TokenizerCollateFn
 
 
 class TinyStoriesDataset(IterableDataset):
+    """
+    train has 2.7M examples
+    validation has 27K examples.
+    """
+
     def __init__(self, data_path):
         self.delimiter = "<|endoftext|>"
         self.data_path = data_path
@@ -17,22 +22,32 @@ class TinyStoriesDataset(IterableDataset):
                 _text = []
 
 
+def tinystories_tokenizer_raw():
+    from transformers import AutoTokenizer
+
+    tokenizer = AutoTokenizer.from_pretrained(
+        pretrained_model_name_or_path="roneneldan/TinyStories-33M"
+    )
+    tokenizer.pad_token = tokenizer.eos_token
+    return tokenizer
+
+
 def tinystories_tokenizer():
     from transformers import AutoTokenizer
+
+    from .train_tinystories_tokenizer import SAVE_PATH
+
     tokenizer = AutoTokenizer.from_pretrained(
-        pretrained_model_name_or_path='roneneldan/TinyStories-33M'
+        pretrained_model_name_or_path=SAVE_PATH
     )
     tokenizer.pad_token = tokenizer.eos_token
     return tokenizer
 
 
 class TinyStoriesCollateFn:
-    def __init__(self, device='cpu', duplicate=False):
+    def __init__(self, device="cpu", duplicate=False):
         tokenizer = tinystories_tokenizer()
-        tokenizer_kwargs={
-            'return_tensors': 'pt',
-            'padding': True
-        }
+        tokenizer_kwargs = {"return_tensors": "pt", "padding": True}
         self._collate_fn = TokenizerCollateFn(
             tokenizer,
             tokenizer_kwargs,
