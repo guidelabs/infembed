@@ -1,4 +1,4 @@
-- _target_: helpers.BatchEndWriter
+- _target_: models._utils.callbacks.helpers.BatchEndWriter
   prediction_extractors_d:
     preds:
       _target_: helpers.default_get_preds

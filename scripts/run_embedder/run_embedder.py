@@ -19,6 +19,7 @@ def run_embedder(
     embeddings_path: str = "embeddings.pt",
     fit_results_path: Optional[str] = None,
     load_fit_results: bool = False,
+    projection_on_cpu: bool = False,
     wrapper_embedder_constructor: Optional[Callable] = None,
 ):
     """
@@ -39,6 +40,9 @@ def run_embedder(
                 load.
         load_fit_results (bool, optional): Whether to call `load` instead of `fit`.
                 Default: False
+        projection_on_cpu (bool, optional): Whether the projection should be stored on
+                the cpu if loading from disk.
+                Default: False
         wrapper_embedder_constructor (Callable, optional): Constructor whose arguments
                 are just the embedder constructed from `embedder_constructor`.
     """
@@ -47,9 +51,9 @@ def run_embedder(
         embedder = wrapper_embedder_constructor(base_embedder=embedder)
     if not load_fit_results:
         embedder.fit(train_dataloader)
+        embedder.save(fit_results_path)
     else:
-        embedder.load(fit_results_path)
-    embedder.save(fit_results_path)
+        embedder.load(fit_results_path, projection_on_cpu=projection_on_cpu)
     embeddings = embedder.predict(test_dataloader)
     torch.save(embeddings, open(embeddings_path, "wb"))
 
@@ -84,6 +88,7 @@ def run(cfg: DictConfig):
         cfg.io.embeddings_path,
         cfg.io.fit_results_path,
         cfg.io.load_fit_results,
+        cfg.io.projection_on_cpu,
         wrapper_embedder_constructor,
     )
 

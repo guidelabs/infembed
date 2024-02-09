@@ -17,6 +17,7 @@ class LimitIterableDataset(IterableDataset):
     def __iter__(self):
         for i, batch in enumerate(self.dataset):
             if self.num is not None and i >= self.num:
+                print('breaking', i)
                 return
             yield batch
 
@@ -127,10 +128,12 @@ class DecoderLLMCollateFn:
         shifted_input_ids = torch.cat(
             [
                 torch.ones(len(texts), 1) * self.tokenizer.bos_token_id,
-                d["input_ids"][:, :-1],
+                d["input_ids"][:, :max(d["input_ids"].shape[1] - 1, 0)],
+                # take everything but last position of `input_ids`.  if length 0,
+                # take nothing
             ],
             dim=1,
-        )
+        ) #[:,:d["input_ids"].shape[1]]
         # create the mask used for generation during training. it's the same for each example, so is 2D
         mask = subsequent_mask(shifted_input_ids.shape[1])
         return {
@@ -151,11 +154,21 @@ class DatasetFromText(IterableDataset):
 
     def __iter__(self):
         t = ""
+        num_yield = 0
+        num_line = 0
         for line in open(self.path, "r"):
             t += line
+            num_line += 1
             if len(t) > self.text_size:
                 yield t[: self.text_size]
                 t = t[self.text_size :]
+                num_yield += 1
+        while len(t) > 0:
+            yield t[: self.text_size]
+            t = t[self.text_size :]
+            num_yield += 1
+        print(num_yield, num_line)
+        
 
 
 class EmptyTextDataset(IterableDataset):
@@ -168,3 +181,25 @@ class EmptyTextDataset(IterableDataset):
     def __iter__(self):
         for _ in range(self.num_examples):
             yield ''
+
+
+class IterableDatasetToDataset(Dataset):
+    def __init__(self, dataset):
+        self._dataset = [batch for batch in dataset]
+
+    def __getitem__(self, i):
+        return self._dataset[i]
+    
+
+def character_tokenizer():
+    from transformers import AutoTokenizer
+    tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-neo-125M")
+    return tokenizer.train_new_from_iterator([], vocab_size=0, initial_alphabet=[])
+
+
+IGNORE_INDEX = -100
+
+
+def LLM_get_target(batch):
+    labels = batch['labels']
+    return labels.masked_fill(batch['attention_mask'] == 0, IGNORE_INDEX).cpu()

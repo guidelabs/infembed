@@ -1,4 +1,4 @@
-- _target_: helpers.TorchMetricsCallback
+- _target_: models._utils.callbacks.TorchMetricsCallback
   metrics:
     accuracy: torchmetrics.Accuracy
   get_preds: model._core.agnews.get_preds

@@ -1,0 +1,29 @@
+_target_: data._utils.common.GenericDataModule
+train_dataloader:
+  _target_: torch.utils.data.DataLoader
+  dataset:
+    _target_: data._utils.common.LimitIterableDataset
+    dataset:
+      _target_: data._core.tinystories.TinyStoriesDataset
+      data_path: '/home/ubuntu/Documents/infembed/files/tinystories/TinyStoriesV2-GPT4-train.txt'
+  batch_size: 48
+  collate_fn:
+    _target_: data._utils.common.DecoderLLMCollateFn
+    tokenizer:
+      _target_: data._core.tinystories.tinystories_tokenizer
+    max_len: 512
+  num_workers: 20
+val_dataloader:
+  _target_: torch.utils.data.DataLoader
+  dataset:
+    _target_: data._utils.common.LimitIterableDataset
+    dataset:
+      _target_: data._core.tinystories.TinyStoriesDataset
+      data_path: '/home/ubuntu/Documents/infembed/files/tinystories/TinyStoriesV2-GPT4-valid.txt'
+  batch_size: 48
+  collate_fn:
+    _target_: data._utils.common.DecoderLLMCollateFn
+    tokenizer:
+      _target_: data._core.tinystories.tinystories_tokenizer
+    max_len: 64
+#  num_workers: 47

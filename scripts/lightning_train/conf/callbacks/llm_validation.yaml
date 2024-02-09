@@ -1,0 +1,15 @@
+- _target_: models._utils.callbacks.TorchMetricsCallback
+  metrics:
+    perplexity: 
+      _target_: torchmetrics.text.perplexity.Perplexity
+  get_preds: 
+    _target_: models._core.decoder_llm.LLM_get_preds
+    _partial_: true
+  get_target: 
+    _target_: data._utils.common.LLM_get_target
+    _partial_: true
+  write_path: 'metrics.csv'
+  hook_strings:
+  - "on_validation_start"
+  - "on_validation_epoch_end"
+  - "on_validation_batch_end"

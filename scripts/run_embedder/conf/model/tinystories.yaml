@@ -9,3 +9,4 @@ model:
   eval: true
 layers:
   - 'model.lm_head'
+  - 'model.transformer.h.3'

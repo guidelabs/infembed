@@ -2,10 +2,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoTokenizer
 import lightning as L
+
+# import pytorch_lightning as pl
 import lightning.pytorch as pl
 import copy
 import torch
 from data._utils.common import subsequent_mask
+from torch.distributions.categorical import Categorical
 
 
 ### define attention ###
@@ -32,18 +35,20 @@ class Attention(nn.Module):
         flexibility.
         `mask` is 2D, because it's the same for every example
         """
-        querys = self.query(querys)
-        keys = self.key(keys)
-        values = self.value(values) # batch size x seq length x `value_dim`
+        _querys = self.query(querys)
+        _keys = self.key(keys)
+        _values = self.value(values)  # batch size x seq length x `value_dim`
         # compute pairwise dot-products
-        weights = torch.sum(querys[:, :, None, :] * keys[:, None, :, :], dim=3)
+        weights = torch.matmul(_querys, _keys.transpose(2, 1))
+        # below is the slow way to calculate the above `matmul`
+        # weights = torch.sum(_querys[:, :, None, :] * _keys[:, None, :, :], dim=3)
         # apply mask
-        weights = weights * mask[None, :, :]
+        weights = weights.masked_fill(mask[None, :, :] == 0, -1e9)
         # normalize for each query
-        weights = F.softmax(weights, dim=2) # batch size X seq length x seq length
+        weights = F.softmax(weights, dim=2)  # batch size X seq length x seq length
         # weight with values.
-        x = torch.einsum('ijk,ikl->ijl', weights, values) 
-        #x = weights @ values.T
+        x = torch.einsum("ijk,ikl->ijl", weights, _values)  # TODO: check
+        # x = weights @ values.T
         return x  # batch size X seq len x `value_dim`
 
 
@@ -176,11 +181,15 @@ class PositionEncoder(nn.Module):
         encoding[:, 0::2] = torch.sin(position[:, None] * c[None, :])
         encoding[:, 1::2] = torch.cos(position[:, None] * c[None, :])
         self.register_buffer("pe", encoding)
-
+        self._max_len = max_len
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         return self.dropout(x + self.pe[None, : x.shape[1], :])
+
+    @property
+    def max_len(self):
+        return self._max_len
 
 
 ### define model and constructor ###
@@ -192,7 +201,9 @@ class Generator(nn.Module):
         self.projection = nn.Linear(model_dim, num_tokens)
 
     def forward(self, x):
-        return F.log_softmax(self.projection(x), dim=2)
+        return self.projection(x)
+        # push log_softmax into loss function
+        # return F.log_softmax(self.projection(x), dim=2) 
 
 
 class Decoder(nn.Module):
@@ -220,6 +231,19 @@ class Decoder(nn.Module):
     @property
     def max_len(self):
         return self.embedder.max_len
+
+
+class Embedder(nn.Module):
+    def __init__(self, num_tokens, model_dim, dropout, max_len):
+        self.embedding = nn.Embedding(num_tokens, model_dim)
+        self.position_encoder = PositionEncoder(model_dim, dropout, max_len)
+
+    def forward(self, x):
+        return self.position_encoder(self.embedding(x))
+
+    @property
+    def max_len(self):
+        return self.position_encoder.max_len
 
 
 def constructor(
@@ -254,6 +278,27 @@ def constructor(
 ### define how to compute loss given huggingface tokenizer output ###
 
 
+class LLMCrossEntropyLoss(nn.Module):
+    def forward(self, output, attention_mask, labels):
+        # get per-example, per-position losses
+        # losses = F.cross_entropy(output, labels, reduction='none')
+        losses = F.cross_entropy(
+            output.reshape(-1, output.shape[-1]), labels.reshape(-1), reduction="none"
+        )
+        if False:
+            brute = sum([F.cross_entropy(_output, _labels, reduction='sum') for (_output, _labels) in zip(output, labels)])
+            print(losses.sum(), brute)
+
+        # multiply by attention mask to ignore padding locations
+        # losses *= attention_mask
+        losses *= attention_mask.reshape(-1)
+        # sum up losses over non-padding locations
+        loss = losses.sum()
+        # divide by total number of non-padding locations
+        loss /= attention_mask.sum()
+        return loss
+
+
 class LabelSmoothingLoss(nn.Module):
     """
     accepts output of tokenizer / dataloader, applies label smoothing to labels
@@ -271,7 +316,7 @@ class LabelSmoothingLoss(nn.Module):
 
     def forward(self, output, attention_mask, labels):
         """
-        `output` is the output of the generator - log probabilities
+        `output` is the output of the generator - logits
         shifting the targets to produce input is responsibility of training loop that calls this loss
         """
         batch_size, batch_len, num_tokens = output.shape
@@ -286,53 +331,79 @@ class LabelSmoothingLoss(nn.Module):
         _labels.scatter_(
             2,
             labels,
-            torch.ones(labels.shape).to(dtype=_labels.dtype, device=_labels.device) * (1 - self.smoothing),
+            torch.ones(labels.shape).to(dtype=_labels.dtype, device=_labels.device)
+            * (1 - self.smoothing),
         )
         # set positions don't care about to zero
         _labels = _labels * attention_mask[:, :, None]
+        # turn logits into log probabilities, which KLDivLoss requires
+        output = F.log_softmax(output, dim=2)
         return self.criterion(output, _labels)
 
 
 ### define lightning module ###
 
 
-class DecoderLightningModule(pl.LightningModule):
-    def __init__(self, decoder, loss_fn, configure_optimizers):
+class DecoderLightningModule(L.LightningModule):
+    def __init__(self, decoder, loss_fn=None, configure_optimizers=None, scheduler_constructor=None):
         super().__init__()
         self.decoder, self.loss_fn, self._configure_optimizers = (
             decoder,
             loss_fn,
             configure_optimizers,
         )
+        self.scheduler_constructor = scheduler_constructor
+
+    _STEP_DO_NOT_LOG_KEYS = ["output", "attention_mask", "labels", "input_ids", "mask"]
 
     def configure_optimizers(self):
-        return self._configure_optimizers(model=self)
-        return torch.optim.Adam(self.parameters(), lr=self.lr)
+        # optimizer = torch.optim.AdamW(
+        #     self.parameters(), lr=1e-3, betas=(0.9, 0.99), weight_decay=1e-1
+        # )
+        # from torch.optim.lr_scheduler import CosineAnnealingLR
+
+        # scheduler = CosineAnnealingLR(optimizer, T_max=8000, eta_min=6e-5)
+
+        optimizer = self._configure_optimizers(self)
+        if self.scheduler_constructor is None:
+            return optimizer
+        else:
+            scheduler = self.scheduler_constructor(optimizer=optimizer)
+            return [optimizer], [scheduler]
 
     def _step(self, batch, batch_idx):
         d = self.forward(batch)
         return {
-            "loss": self.loss_fn(d["output"], batch["attention_mask"], batch["labels"])
+            "loss": self.loss_fn(d["output"], batch["attention_mask"], batch["labels"]),
+            **d,
+            **batch,
         }
 
     def training_step(self, batch, batch_idx):
         d = self._step(batch, batch_idx)
         self.log_dict(
-            {f"train_{key}": val for (key, val) in d.items() if key[0] != "_"}
+            {f"train_{key}": val for (key, val) in d.items() if key[0] != "_" and key not in self._STEP_DO_NOT_LOG_KEYS},
+            on_step=True,
+            on_epoch=True,
         )
         return d
 
     def validation_step(self, batch, batch_idx):
         d = self._step(batch, batch_idx)
         self.log_dict(
-            {f"validation_{key}": val for (key, val) in d.items() if key[0] != "_"}
+            {f"validation_{key}": val for (key, val) in d.items() if key[0] != "_" and key not in self._STEP_DO_NOT_LOG_KEYS},
+            on_step=True,
+            on_epoch=True,
         )
         return d
 
     def prediction_step(self, batch, batch_idx):
+        assert False
         d = self._step(batch, batch_idx)
         self.log_dict(
-            {f"prediction_{key}": val for (key, val) in d.items() if key[0] != "_"}
+            {f"prediction_{key}": val for (key, val) in d.items() if key[0] != "_" and key not in self._STEP_DO_NOT_LOG_KEYS},
+            on_step=True,
+            on_epoch=True,
         )
         return d
 
@@ -345,21 +416,43 @@ class DecoderLightningModule(pl.LightningModule):
             "output": output,
         }
 
+    # @property
+    def max_len(self):
+        return self.decoder.max_len
+
 
 class GreedyDecoder:
     def __init__(self, max_len):
         self.max_len = max_len
 
-    def __call__(self, model, eos_token, input_ids):
+    def __call__(self, model, eos_token, input_ids, temperature=None):
         """
         `input_ids` is 1D, representing a single example.
         """
         output_ids = []
         for _ in range(self.max_len - len(input_ids)):
-            output = next(iter(model.decoder.full_generate(x=input_ids.unsqueeze(0), mask=subsequent_mask(len(input_ids)).to(device=input_ids.device))))[-1]
-            top_id = torch.argmax(output)
+            output = next(
+                iter(
+                    model.decoder.full_generate(
+                        x=input_ids.unsqueeze(0),
+                        mask=subsequent_mask(len(input_ids)).to(
+                            device=input_ids.device
+                        ),
+                    )
+                )
+            )
+            output = output[-1] # get logits in last layer
+            if temperature is None or temperature == 0:
+                top_id = torch.argmax(output)
+            else:
+                output = output / temperature
+                top_id = Categorical(logits = output / temperature).sample()
             if top_id == eos_token:
                 break
             input_ids = torch.cat([input_ids, top_id.unsqueeze(0)])
             output_ids.append(top_id)
-        return torch.Tensor(output_ids)
+        return torch.Tensor(output_ids).long()
+
+
+def LLM_get_preds(out):
+    return out['output'].cpu()

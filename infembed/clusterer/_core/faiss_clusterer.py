@@ -40,6 +40,9 @@ class FAISSClusterer(ClustererBase):
         assert isinstance(data.embeddings, torch.Tensor)
         d = data.embeddings.shape[1]
         self.kmeans = faiss.Kmeans(d=d, seed=42, **self.faiss_kmeans_kwargs)
+        # to avoid warning messages
+        self.kmeans.cp.min_points_per_centroid = 1
+        self.kmeans.cp.max_points_per_centroid = 10000000
         self.kmeans.train(data.embeddings)
         return self
 

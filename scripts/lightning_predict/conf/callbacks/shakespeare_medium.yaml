@@ -1,0 +1,17 @@
+- _target_: models._utils.callbacks.DecoderCallback
+  eos_token_id: 1
+  max_len: 64
+  hook_strings:
+  - 'on_predict_batch_end'
+  tokenizer:
+    _target_: data._utils.common.character_tokenizer
+  num_samples_per_temperature:
+  - 
+    - 0
+    - 1
+  -
+    - 0.5
+    - 5
+  - 
+    - 1.0
+    - 5

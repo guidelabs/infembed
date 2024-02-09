@@ -9,10 +9,12 @@ defaults:
 hydra:
   run:
 #    dir: outputs/fast_kfac
-    dir: outputs/imagenet_timing_experiments
+    #dir: outputs/imagenet_timing_experiments
+    dir: '/home/ubuntu/Documents/infembed/examples/imagenet/hydra_outputs/imagenet_kfac_lastlayer_eval_no_shuffle'
 #    dir: outputs/spotcheck/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
   sweep:
 #    dir: outputs/fast_kfac
-    dir: outputs/imagenet_timing_experiments
+    #dir: outputs/imagenet_timing_experiments
+    dir: '/home/ubuntu/Documents/infembed/examples/imagenet/hydra_outputs/imagenet_kfac_lastlayer_eval_no_shuffle'
 #    dir: outputs/spotcheck/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
 #    subdir: trial_${trial.trial}

@@ -1,0 +1,32 @@
+_target_: models._core.decoder_llm.DecoderLightningModule
+decoder:
+  _target_: models._core.decoder_llm.constructor
+  model_dim: 128
+  key_dim: 8
+  value_dim: 8
+  num_heads: 16
+  num_layers: 8
+  dropout: 0.0
+  hidden_dim: 512
+  num_tokens: 10000
+  max_len: 2048
+loss_fn:
+  # _target_: models._core.decoder_llm.LabelSmoothingLoss
+  # criterion:
+  #   _target_: torch.nn.KLDivLoss
+  #   reduction: 'sum'
+  # smoothing: 0.1
+  _target_: models._core.decoder_llm.LLMCrossEntropyLoss
+configure_optimizers:
+  _target_: models._utils.common.GenericConfigureOptimizers
+  parameters_getter:
+    _partial_: true
+    _target_: models._utils.common.get_all_parameters
+  optimizer_constructor:
+    _partial_: true
+    _target_: torch.optim.AdamW
+    lr: 5e-4
+    weight_decay: 0.1
+    betas:
+    - 0.9
+    - 0.95
