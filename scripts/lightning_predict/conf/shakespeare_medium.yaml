@@ -7,7 +7,9 @@ defaults:
 hydra:
   run:
 #    dir: outputs/fast_kfac
-    dir: /Users/fultonwang/Documents/infembed/examples/shakespeare/hydra_outputs/lightning_predict/test
+    # dir: /Users/fultonwang/Documents/infembed/examples/shakespeare/hydra_outputs/lightning_predict/test
+    dir: /home/ubuntu/Documents/infembed/examples/shakespeare/hydra_outputs/lightning_predict/test
 #    dir: outputs/spotcheck/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
   sweep:
-    dir: /Users/fultonwang/Documents/infembed/examples/shakespeare/hydra_outputs/lightning_predict/test
+    dir: /home/ubuntu/Documents/infembed/examples/shakespeare/hydra_outputs/lightning_predict/test
+    # dir: /Users/fultonwang/Documents/infembed/examples/shakespeare/hydra_outputs/lightning_predict/test

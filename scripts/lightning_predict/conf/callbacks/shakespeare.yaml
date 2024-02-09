@@ -1,4 +1,4 @@
-- _target_: models._utils.callbacks.GreedyDecoderCallback
+- _target_: models._utils.callbacks.DecoderCallback
   eos_token_id: 1
   max_len: 256
   hook_strings:

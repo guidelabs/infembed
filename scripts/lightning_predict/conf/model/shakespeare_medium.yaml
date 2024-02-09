@@ -8,11 +8,15 @@ model:
     value_dim: 32
     num_heads: 4
     num_layers: 4
+    # key_dim: 128
+    # value_dim: 128
+    # num_heads: 1
+    # num_layers: 8
     dropout: 0.0
     hidden_dim: 512
     # num_tokens: 107
     num_tokens: 256
-    max_len: 64
+    max_len: 2048
 eval: true
 checkpoints_load_func: 
   _target_: models._utils.common.default_checkpoints_load_func
@@ -24,7 +28,10 @@ checkpoints_load_func:
 # checkpoint: '/home/ubuntu/Documents/infembed/examples/shakespeare/hydra_outputs/lightning_train/test/0/lightning_logs/csjk7rd0/checkpoints/epoch=0-step=8000.ckpt'
 # checkpoint: '/Users/fultonwang/Documents/infembed/examples/shakespeare/hydra_outputs/lightning_train/test/0/lightning_logs/q8be9kse/checkpoints/epoch=0-step=8000.ckpt'
 # checkpoint: '/Users/fultonwang/Documents/infembed/examples/shakespeare/hydra_outputs/lightning_train/test/0/lightning_logs/qto0il1f/checkpoints/epoch=16-step=4000.ckpt'
-checkpoint: '/Users/fultonwang/Documents/infembed/examples/shakespeare/hydra_outputs/lightning_train/test/0/lightning_logs/hg06ihka/checkpoints/epoch=8-step=2000.ckpt'
+# checkpoint: '/Users/fultonwang/Documents/infembed/examples/shakespeare/hydra_outputs/lightning_train/test/0/lightning_logs/hg06ihka/checkpoints/epoch=8-step=2000.ckpt'
+# checkpoint: '/home/ubuntu/Documents/infembed/examples/shakespeare/hydra_outputs/lightning_train/test/0/lightning_logs/q698jgxk/checkpoints/epoch=9-step=2000.ckpt'
+# checkpoint: '/home/ubuntu/Documents/infembed/examples/shakespeare/hydra_outputs/lightning_train/test/0/lightning_logs/vin2mprs/checkpoints/epoch=17-step=36000.ckpt'
+checkpoint: '/home/ubuntu/Documents/infembed/examples/shakespeare/hydra_outputs/lightning_train/test/0/lightning_logs/eywrdb4v/checkpoints/epoch=15-step=32000.ckpt'
 # _target_: models._utils.common.lightning_load_model
 # load_from_checkpoint_fn: 
 #   _target_: models._core.decoder_llm.DecoderLightningModule.load_from_checkpoint

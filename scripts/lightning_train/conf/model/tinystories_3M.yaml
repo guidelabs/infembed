@@ -2,26 +2,20 @@ _target_: models._core.decoder_llm.DecoderLightningModule
 decoder:
   _target_: models._core.decoder_llm.constructor
   model_dim: 128
-  # key_dim: 128
-  # value_dim: 128
-  # num_heads: 1
-  # num_layers: 8
-  key_dim: 32
-  value_dim: 32
-  num_heads: 4
-  num_layers: 4
+  key_dim: 8
+  value_dim: 8
+  num_heads: 16
+  num_layers: 8
   dropout: 0.0
   hidden_dim: 512
-  # num_tokens: 107
-  # num_tokens: 50257
-  num_tokens: 256
+  num_tokens: 10000
   max_len: 2048
 loss_fn:
   # _target_: models._core.decoder_llm.LabelSmoothingLoss
   # criterion:
   #   _target_: torch.nn.KLDivLoss
   #   reduction: 'sum'
-  # smoothing: 1e-3
+  # smoothing: 0.1
   _target_: models._core.decoder_llm.LLMCrossEntropyLoss
 configure_optimizers:
   _target_: models._utils.common.GenericConfigureOptimizers
@@ -31,13 +25,8 @@ configure_optimizers:
   optimizer_constructor:
     _partial_: true
     _target_: torch.optim.AdamW
-    lr: 1e-3
+    lr: 5e-4
+    weight_decay: 0.1
     betas:
     - 0.9
-    - 0.99
-    weight_decay: 1e-1
-scheduler_constructor:
-  _target_: torch.optim.lr_scheduler.CosineAnnealingLR
-  T_max: 8000
-  eta_min: 6e-5
-  _partial_: true
+    - 0.95

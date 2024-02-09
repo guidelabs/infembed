@@ -1,7 +1,7 @@
 defaults:
   - callbacks: standard
-  - datamodule: tinystories
-  - model: tinystories
+  - datamodule: tinystories_manual
+  - model: tinystories_3M
   - trainer_kwargs: standard
   - _self_
 hydra:
@@ -11,6 +11,6 @@ hydra:
 #    dir: outputs/spotcheck/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
   sweep:
 #    dir: outputs/fast_kfac
-    dir:  /home/ubuntu/Documents/infembed/examples/tinystories/hydra_outputs/lightning_train/test
+    dir: /home/ubuntu/Documents/infembed/examples/tinystories/hydra_outputs/lightning_train/test
 #    dir: outputs/spotcheck/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
     subdir: lr_${model.configure_optimizers.optimizer_constructor.lr}
