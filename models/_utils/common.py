@@ -1,12 +1,13 @@
-from typing import Callable, Optional
+from typing import Callable, Dict, Optional
 from data._utils.common import default_batch_to_target, default_batch_to_x
 import torch
 import torch.nn as nn
-import pytorch_lightning as pl
+import lightning.pytorch as pl
+import lightning as L
 
 
-def default_checkpoints_load_func(model, path, key=None):
-    state = torch.load(open(path, "rb"))
+def default_checkpoints_load_func(model, path, device, key=None):
+    state = torch.load(open(path, "rb"), map_location=device)
     state_dict = state if key is None else state[key]
     model.load_state_dict(state_dict, strict=False)
 
@@ -35,9 +36,9 @@ def load_model(
     """
     loads model checkpoint if provided, moves to specified device
     """
-    if checkpoints_load_func is not None:
-        checkpoints_load_func(model=model, path=checkpoint)
-    model.to(device=device)
+    if checkpoints_load_func is not None and checkpoint is not None:
+        checkpoints_load_func(model=model, path=checkpoint, device=device)
+    # model.to(device=device)
     if eval:
         model.eval()
     else:
@@ -88,6 +89,51 @@ class GenericConfigureOptimizers:
         return self.optimizer_constructor(self.parameters_getter(model=model))
 
 
+class _GenericLightningModule(L.LightningModule):
+    def __init__(self, model, loss_fn=None, configure_optimizers=None, scheduler_constructor=None):
+        super().__init__()
+        self.model, self.loss_fn, self._configure_optimizers = (
+            model,
+            loss_fn,
+            configure_optimizers,
+        )
+        self.scheduler_constructor = scheduler_constructor
+
+    _STEP_DO_NOT_LOG_KEYS = []
+
+    def configure_optimizers(self):
+        optimizer = self._configure_optimizers(self)
+        if self.scheduler_constructor is None:
+            return optimizer
+        else:
+            scheduler = self.scheduler_constructor(optimizer=optimizer)
+            return [optimizer], [scheduler]
+
+    def _step(self, batch, batch_idx) -> Dict:
+        raise NotImplementedError
+
+    def training_step(self, batch, batch_idx):
+        d = self._step(batch, batch_idx)
+        self.log_dict(
+            {f"train_{key}": val for (key, val) in d.items() if key[0] != "_" and key not in self._STEP_DO_NOT_LOG_KEYS},
+            on_step=True,
+            on_epoch=True,
+        )
+        return d
+
+    def validation_step(self, batch, batch_idx):
+        d = self._step(batch, batch_idx)
+        self.log_dict(
+            {f"validation_{key}": val for (key, val) in d.items() if key[0] != "_" and key not in self._STEP_DO_NOT_LOG_KEYS},
+            on_step=True,
+            on_epoch=True,
+        )
+        return d
+
+    def prediction_step(self, batch, batch_idx):
+        raise NotImplementedError
+
+
 class GenericLightningModel(pl.LightningModule):
     """
     the most basic pl wrapper whose purpose is just to train.  doesn't log anything
@@ -119,7 +165,7 @@ class GenericLightningModel(pl.LightningModule):
     def _step(self, batch, batch_idx):
         # run forward
         x = self.batch_to_x(batch)
-        y = self.batch_to_y(batch)
+        y = self.batch_to_target(batch)
         y_hat = self.forward(x)
         loss = self.loss_fn(y_hat, y)
         return {"loss": loss}

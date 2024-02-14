@@ -18,7 +18,8 @@ train_dataloader:
       # model_max_length: 64 
       _target_: data._utils.common.character_tokenizer
     max_len: 64
-  num_workers: 10
+  # num_workers: 10
+  num_workers: 0
 val_dataloader:
   _target_: torch.utils.data.DataLoader
   dataset:
@@ -41,3 +42,4 @@ val_dataloader:
       _target_: data._utils.common.character_tokenizer
     max_len: 64
 #  num_workers: 47
+  num_workers: 0  

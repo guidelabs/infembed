@@ -1,0 +1,21 @@
+_target_: models._utils.common.load_model
+model:
+  _target_: models._core.decoder_llm.DecoderLightningModule
+  decoder:
+    _target_: models._core.decoder_llm.constructor
+    model_dim: 768
+    key_dim: 48
+    value_dim: 48
+    num_heads: 16
+    num_layers: 4
+    dropout: 0.0
+    hidden_dim: 3072
+    num_tokens: 10000
+    max_len: 2048
+eval: true
+checkpoints_load_func: 
+  _target_: models._utils.common.default_checkpoints_load_func
+  key: state_dict
+  # _target_: models._utils.common.lightning_checkpoints_load_func
+  _partial_: true
+checkpoint: '/home/ubuntu/Documents/infembed/scripts/misc/lightning_logs/0hiuc53z/checkpoints/epoch=0-step=4500.ckpt'

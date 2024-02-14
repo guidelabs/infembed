@@ -1,3 +1,4 @@
+from typing import Callable, List
 from torch.utils.data import IterableDataset
 from data._utils.common import TokenizerCollateFn
 
@@ -58,3 +59,11 @@ class TinyStoriesCollateFn:
 
     def __call__(self, texts):
         return self._collate_fn(texts)
+    
+
+def text_len_fn(cutoff, text):
+    return len(text) > cutoff
+
+
+def has_str_fn(s, text):
+    return s.lower() in text.lower()

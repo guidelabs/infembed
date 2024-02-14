@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Callable, List, Optional
 from torch.utils.data import Dataset, Subset, IterableDataset
 import torch
 import lightning as L
@@ -17,7 +17,7 @@ class LimitIterableDataset(IterableDataset):
     def __iter__(self):
         for i, batch in enumerate(self.dataset):
             if self.num is not None and i >= self.num:
-                print('breaking', i)
+                print("breaking", i)
                 return
             yield batch
 
@@ -60,7 +60,7 @@ class GenericDataModule(L.LightningDataModule):
 
     def predict_dataloader(self):
         return self._predict_dataloader
-    
+
 
 def default_batch_to_x(batch):
     return batch[:-1]
@@ -80,7 +80,7 @@ class ComposeCollateFn:
 
     def __call__(self, x):
         return self.f(self.g(x))
-    
+
 
 class TokenizerCollateFn:
     """
@@ -88,16 +88,24 @@ class TokenizerCollateFn:
     duplicates the tokenizer output to produce length 2 tuple.  if `add_labels` is
     true, duplicates the `labels` as `input_ids`.
     """
-    def __init__(self, tokenizer, tokenizer_kwargs, duplicate=False, add_labels=True, device='cpu'):
+
+    def __init__(
+        self,
+        tokenizer,
+        tokenizer_kwargs,
+        duplicate=False,
+        add_labels=True,
+        device="cpu",
+    ):
         self.tokenizer, self.tokenizer_kwargs = tokenizer, tokenizer_kwargs
         self.duplicate, self.add_labels, self.device = duplicate, add_labels, device
 
     def __call__(self, texts):
         output = self.tokenizer(texts, **self.tokenizer_kwargs).to(self.device)
         if self.add_labels:
-            output['labels'] = output['input_ids']
+            output["labels"] = output["input_ids"]
         return output if not self.duplicate else (output, output)
-    
+
 
 def subsequent_mask(size):
     # returns 2D
@@ -116,7 +124,7 @@ class DecoderLLMCollateFn:
 
     def __call__(self, texts):
         # this is the unshifted text
-        d = self.tokenizer(texts, return_tensors='pt', padding=True, truncation=True)
+        d = self.tokenizer(texts, return_tensors="pt", padding=True, truncation=True)
         # truncate if needed
         if d["input_ids"].shape[1] > self.max_len:
             end_pos = self.max_len
@@ -128,12 +136,12 @@ class DecoderLLMCollateFn:
         shifted_input_ids = torch.cat(
             [
                 torch.ones(len(texts), 1) * self.tokenizer.bos_token_id,
-                d["input_ids"][:, :max(d["input_ids"].shape[1] - 1, 0)],
+                d["input_ids"][:, : max(d["input_ids"].shape[1] - 1, 0)],
                 # take everything but last position of `input_ids`.  if length 0,
                 # take nothing
             ],
             dim=1,
-        ) #[:,:d["input_ids"].shape[1]]
+        )  # [:,:d["input_ids"].shape[1]]
         # create the mask used for generation during training. it's the same for each example, so is 2D
         mask = subsequent_mask(shifted_input_ids.shape[1])
         return {
@@ -142,7 +150,64 @@ class DecoderLLMCollateFn:
             "input_ids": shifted_input_ids.to(dtype=int),
             "mask": mask,
         }
-    
+
+
+class ZipDataset(Dataset):
+    """
+    takes in sequence of datasets, and returns their zip.
+    can act as `Dataset` if all of `dataset` is a `Dataset`
+    """
+
+    def __init__(self, datasets: List[Dataset]):
+        self.datasets = datasets
+
+    def __getitem__(self, i: int):
+        return tuple(dataset[i] for dataset in self.datasets)
+
+    def __len__(self):
+        return len(next(iter(self.datasets)))
+
+
+class ZipIterableDataset(IterableDataset):
+    """
+    takes in sequence of datasets, and returns their zip.
+    can act as `Dataset` if all of `dataset` is a `Dataset`
+    """
+
+    def __init__(self, datasets: List[Dataset]):
+        self.datasets = datasets
+
+    def __iter__(self):
+        return zip(*self.datasets)
+
+
+def dict_batch_combiner(dicts):
+    """
+    returns dictionary with union of the items in dicts
+    """
+    d = {}
+    for _d in dicts:
+        d = {**d, **_d}
+    return d
+
+
+class ZipCollateFn:
+    """
+    applies sequence of collate functions to the examples from a `ZipDataset`, and
+    applies a specified function to combine the different batches
+    """
+
+    def __init__(self, collate_fns, combiner: Callable):
+        self.collate_fns = collate_fns
+        self.combiner = combiner
+
+    def __call__(self, examples):
+        batches = [
+            collate_fn(_examples)
+            for (_examples, collate_fn) in zip(zip(*examples), self.collate_fns)
+        ]
+        return self.combiner(batches)
+
 
 class DatasetFromText(IterableDataset):
     """
@@ -168,19 +233,19 @@ class DatasetFromText(IterableDataset):
             t = t[self.text_size :]
             num_yield += 1
         print(num_yield, num_line)
-        
 
 
 class EmptyTextDataset(IterableDataset):
     """
     yields empty text for use in prediction step, to generate text from nothing
     """
+
     def __init__(self, num_examples):
         self.num_examples = num_examples
 
     def __iter__(self):
         for _ in range(self.num_examples):
-            yield ''
+            yield ""
 
 
 class IterableDatasetToDataset(Dataset):
@@ -189,10 +254,11 @@ class IterableDatasetToDataset(Dataset):
 
     def __getitem__(self, i):
         return self._dataset[i]
-    
+
 
 def character_tokenizer():
     from transformers import AutoTokenizer
+
     tokenizer = AutoTokenizer.from_pretrained("EleutherAI/gpt-neo-125M")
     return tokenizer.train_new_from_iterator([], vocab_size=0, initial_alphabet=[])
 
@@ -201,5 +267,5 @@ IGNORE_INDEX = -100
 
 
 def LLM_get_target(batch):
-    labels = batch['labels']
-    return labels.masked_fill(batch['attention_mask'] == 0, IGNORE_INDEX).cpu()
+    labels = batch["labels"]
+    return labels.masked_fill(batch["attention_mask"] == 0, IGNORE_INDEX).cpu()

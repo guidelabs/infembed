@@ -1,3 +1,4 @@
+from models._utils.common import _GenericLightningModule
 import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoTokenizer
@@ -203,7 +204,7 @@ class Generator(nn.Module):
     def forward(self, x):
         return self.projection(x)
         # push log_softmax into loss function
-        # return F.log_softmax(self.projection(x), dim=2) 
+        # return F.log_softmax(self.projection(x), dim=2)
 
 
 class Decoder(nn.Module):
@@ -222,11 +223,11 @@ class Decoder(nn.Module):
     def full_generate(self, x, mask):
         return self.generate(self.forward(x, mask))
 
-    def generate(self, x):
-        """
-        `x` is the output of forward
-        """
-        return self.generator(x)
+    # def generate(self, x):
+    #     """
+    #     `x` is the output of forward
+    #     """
+    #     return self.generator(x)
 
     @property
     def max_len(self):
@@ -286,7 +287,12 @@ class LLMCrossEntropyLoss(nn.Module):
             output.reshape(-1, output.shape[-1]), labels.reshape(-1), reduction="none"
         )
         if False:
-            brute = sum([F.cross_entropy(_output, _labels, reduction='sum') for (_output, _labels) in zip(output, labels)])
+            brute = sum(
+                [
+                    F.cross_entropy(_output, _labels, reduction="sum")
+                    for (_output, _labels) in zip(output, labels)
+                ]
+            )
             print(losses.sum(), brute)
 
         # multiply by attention mask to ignore padding locations
@@ -344,8 +350,44 @@ class LabelSmoothingLoss(nn.Module):
 ### define lightning module ###
 
 
-class DecoderLightningModule(L.LightningModule):
-    def __init__(self, decoder, loss_fn=None, configure_optimizers=None, scheduler_constructor=None):
+class DecoderLightningModule(_GenericLightningModule):
+    def __init__(
+        self,
+        decoder: Decoder,
+        loss_fn=None,
+        configure_optimizers=None,
+        scheduler_constructor=None,
+    ):
+        _GenericLightningModule.__init__(
+            self, decoder, loss_fn, configure_optimizers, scheduler_constructor
+        )
+
+    _STEP_DO_NOT_LOG_KEYS = ["output", "attention_mask", "labels", "input_ids", "mask"]
+
+    def _step(self, batch, batch_idx):
+        d = self.forward(batch)
+        return {
+            "loss": self.loss_fn(d["output"], batch["attention_mask"], batch["labels"]),
+            **d,
+            **batch,
+        }
+
+    def forward(self, batch):
+        # output is the log probabilities for each position and token
+        output = self.model.full_generate(batch["input_ids"], batch["mask"])
+        return {
+            "output": output,
+        }
+
+
+class _DecoderLightningModule(L.LightningModule):
+    def __init__(
+        self,
+        decoder,
+        loss_fn=None,
+        configure_optimizers=None,
+        scheduler_constructor=None,
+    ):
         super().__init__()
         self.decoder, self.loss_fn, self._configure_optimizers = (
             decoder,
@@ -382,7 +424,11 @@ class DecoderLightningModule(L.LightningModule):
     def training_step(self, batch, batch_idx):
         d = self._step(batch, batch_idx)
         self.log_dict(
-            {f"train_{key}": val for (key, val) in d.items() if key[0] != "_" and key not in self._STEP_DO_NOT_LOG_KEYS},
+            {
+                f"train_{key}": val
+                for (key, val) in d.items()
+                if key[0] != "_" and key not in self._STEP_DO_NOT_LOG_KEYS
+            },
             on_step=True,
             on_epoch=True,
         )
@@ -391,7 +437,11 @@ class DecoderLightningModule(L.LightningModule):
     def validation_step(self, batch, batch_idx):
         d = self._step(batch, batch_idx)
         self.log_dict(
-            {f"validation_{key}": val for (key, val) in d.items() if key[0] != "_" and key not in self._STEP_DO_NOT_LOG_KEYS},
+            {
+                f"validation_{key}": val
+                for (key, val) in d.items()
+                if key[0] != "_" and key not in self._STEP_DO_NOT_LOG_KEYS
+            },
             on_step=True,
             on_epoch=True,
         )
@@ -401,7 +451,11 @@ class DecoderLightningModule(L.LightningModule):
         assert False
         d = self._step(batch, batch_idx)
         self.log_dict(
-            {f"prediction_{key}": val for (key, val) in d.items() if key[0] != "_" and key not in self._STEP_DO_NOT_LOG_KEYS},
+            {
+                f"prediction_{key}": val
+                for (key, val) in d.items()
+                if key[0] != "_" and key not in self._STEP_DO_NOT_LOG_KEYS
+            },
             on_step=True,
             on_epoch=True,
         )
@@ -441,12 +495,12 @@ class GreedyDecoder:
                     )
                 )
             )
-            output = output[-1] # get logits in last layer
+            output = output[-1]  # get logits in last layer
             if temperature is None or temperature == 0:
                 top_id = torch.argmax(output)
             else:
                 output = output / temperature
-                top_id = Categorical(logits = output / temperature).sample()
+                top_id = Categorical(logits=output / temperature).sample()
             if top_id == eos_token:
                 break
             input_ids = torch.cat([input_ids, top_id.unsqueeze(0)])
@@ -455,4 +509,4 @@ class GreedyDecoder:
 
 
 def LLM_get_preds(out):
-    return out['output'].cpu()
+    return out["output"].cpu()

@@ -1,0 +1,15 @@
+_target_: torch.utils.data.DataLoader
+# dataset:
+#   _target_: data.helpers.DatasetFromText
+#   path: '/home/ubuntu/Documents/experimental/data/files/shakespeare/input_val.txt'
+#   text_size: 256
+dataset:
+  _target_: data._utils.common.EmptyTextDataset
+  num_examples: 1
+batch_size: 4
+collate_fn:
+  _target_: data._utils.common.DecoderLLMCollateFn
+  tokenizer:
+    _target_: data._core.tinystories.tinystories_tokenizer
+  max_len: 512
+#  num_workers: 47

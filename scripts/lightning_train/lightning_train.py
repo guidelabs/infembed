@@ -5,11 +5,12 @@ from hydra.utils import instantiate
 import wandb
 # import lightning.pytorch as L
 import lightning as L
+import torch
 
 WANDB_CONFIG_NAME = 'wandb'
 
 
-@hydra.main(version_base=None, config_path="conf", config_name="config")
+@hydra.main(config_path="conf", config_name="config")
 def run(cfg: DictConfig):
     
     use_wandb = WANDB_CONFIG_NAME in cfg
@@ -20,6 +21,10 @@ def run(cfg: DictConfig):
     trainer = L.Trainer(
         callbacks=instantiate(cfg.callbacks), **instantiate(cfg.trainer_kwargs)
     )
+    # trainer = L.Trainer()
+    # trainer = L.Trainer(
+    #     **instantiate(cfg.trainer_kwargs)
+    # )
 
     validate = False
     if 'validate' in cfg:
@@ -32,4 +37,5 @@ def run(cfg: DictConfig):
 
 
 if __name__ == "__main__":
+    #torch.multiprocessing.set_start_method('spawn')
     run()

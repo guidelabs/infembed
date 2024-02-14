@@ -1,0 +1,53 @@
+_target_: data._utils.common.GenericDataModule
+train_dataloader:
+  _target_: torch.utils.data.DataLoader
+  dataset:
+    _target_: data._utils.common.ZipIterableDataset
+    datasets:
+      - _target_: data._utils.common.LimitIterableDataset
+        dataset:
+          _target_: data._core.tinystories.TinyStoriesDataset
+          data_path: '/home/ubuntu/Documents/infembed/files/tinystories/TinyStoriesV2-GPT4-train.txt'
+      - ${.....concept_dataset.train}
+  # batch_size: 48
+  batch_size: 40
+  collate_fn:
+    _target_: data._utils.common.ZipCollateFn
+    collate_fns:
+    - _target_: data._utils.common.DecoderLLMCollateFn
+      tokenizer:
+        _target_: data._core.tinystories.tinystories_tokenizer
+      max_len: 512
+    - _target_: data._utils.cb_llm.TokenConceptDatasetCollateFn
+      max_len: 512
+    combiner:
+      _target_: data._utils.common.dict_batch_combiner
+      _partial_: true
+  # num_workers: 20
+  num_workers: 0
+val_dataloader:
+  _target_: torch.utils.data.DataLoader
+  dataset:
+    _target_: data._utils.common.ZipIterableDataset
+    datasets:
+      - _target_: data._utils.common.LimitIterableDataset
+        dataset:
+          _target_: data._core.tinystories.TinyStoriesDataset
+          data_path: '/home/ubuntu/Documents/infembed/files/tinystories/TinyStoriesV2-GPT4-valid.txt'
+      - ${.....concept_dataset.val}
+  # batch_size: 48
+  batch_size: 40
+  collate_fn:
+    _target_: data._utils.common.ZipCollateFn
+    collate_fns:
+    - _target_: data._utils.common.DecoderLLMCollateFn
+      tokenizer:
+        _target_: data._core.tinystories.tinystories_tokenizer
+      max_len: 512
+    - _target_: data._utils.cb_llm.TokenConceptDatasetCollateFn
+      max_len: 512
+    combiner:
+      _target_: data._utils.common.dict_batch_combiner
+      _partial_: true
+  # num_workers: 20
+  num_workers: 0
