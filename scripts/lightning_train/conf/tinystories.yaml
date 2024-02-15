@@ -1,7 +1,7 @@
 defaults:
   - callbacks: standard
   - datamodule: tinystories_manual
-  - model: tinystories_3M
+  - model: tinystories_33M
   - trainer_kwargs: standard
   - _self_
 hydra:

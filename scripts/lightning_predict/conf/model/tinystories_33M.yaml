@@ -18,4 +18,6 @@ checkpoints_load_func:
   key: state_dict
   # _target_: models._utils.common.lightning_checkpoints_load_func
   _partial_: true
-checkpoint: '/home/ubuntu/Documents/infembed/scripts/misc/lightning_logs/0hiuc53z/checkpoints/epoch=0-step=4500.ckpt'
+# checkpoint: '/home/ubuntu/Documents/infembed/scripts/misc/lightning_logs/0hiuc53z/checkpoints/epoch=0-step=4500.ckpt'
+checkpoint: '/home/ubuntu/Documents/infembed/scripts/misc/lightning_logs/0hiuc53z/checkpoints/epoch=0-step=21600.ckpt'
+# checkpoint: '/home/ubuntu/Documents/infembed/examples/tinystories/hydra_outputs/lightning_train/test/lr_0.0005/lightning_logs/5zjyan13/checkpoints/epoch=0-step=14000.ckpt'

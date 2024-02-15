@@ -5,10 +5,10 @@ _target_: torch.utils.data.DataLoader
 #   text_size: 256
 dataset:
   _target_: data._utils.common.EmptyTextDataset
-  num_examples: 1
-batch_size: 4
+  num_examples: 4
+batch_size: 2
 collate_fn:
-  _target_: data._utils.common.DecoderLLMCollateFn
+  _target_: data._utils.llm.DecoderLLMCollateFn
   tokenizer:
     _target_: data._core.tinystories.tinystories_tokenizer
   max_len: 512

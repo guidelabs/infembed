@@ -12,7 +12,7 @@ train_dataloader:
     # num: 128
   batch_size: 64
   collate_fn:
-    _target_: data._utils.common.DecoderLLMCollateFn
+    _target_: data._utils.llm.DecoderLLMCollateFn
     tokenizer:
       # _target_: data._utils.character_tokenizer.CharacterTokenizer
       # model_max_length: 64 
@@ -35,7 +35,7 @@ val_dataloader:
   #   num_examples: 10
   batch_size: 64
   collate_fn:
-    _target_: data._utils.common.DecoderLLMCollateFn
+    _target_: data._utils.llm.DecoderLLMCollateFn
     tokenizer:
       # _target_: data._utils.character_tokenizer.CharacterTokenizer
       # model_max_length: 64 

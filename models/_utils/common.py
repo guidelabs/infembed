@@ -92,10 +92,10 @@ class GenericConfigureOptimizers:
 
 
 class GenericLightningModule(L.LightningModule):
-    def __init__(self, model, loss_fn=None, configure_optimizers=None, scheduler_constructor=None):
+    def __init__(self, decoder, loss_fn=None, configure_optimizers=None, scheduler_constructor=None):
         super().__init__()
-        self.model, self.loss_fn, self._configure_optimizers = (
-            model,
+        self.decoder, self.loss_fn, self._configure_optimizers = (
+            decoder,
             loss_fn,
             configure_optimizers,
         )

@@ -1,5 +1,6 @@
 from models._core.decoder_llm import PositionEncoder, clones
-from models._utils.common import MLP, GenericLightningModule, LLMBinaryMultitaskMLPGenerator
+from models._utils.common import MLP, GenericLightningModule
+from models._utils.llm import LLMBinaryMultitaskMLPGenerator
 from .decoder_llm import DecoderLayer, MultiAttention, FeedForward, Sublayer
 import torch.nn as nn
 import torch
@@ -195,7 +196,7 @@ class CBDecoderLightningModule(GenericLightningModule):
         }
 
     def forward(self, batch):
-        return self.model.full_generate(batch["input_ids"], batch["mask"])
+        return self.decoder.full_generate(batch["input_ids"], batch["mask"])
 
 
 class CBDecoderLoss(nn.Module):

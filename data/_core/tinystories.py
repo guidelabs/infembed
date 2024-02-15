@@ -1,6 +1,6 @@
 from typing import Callable, List
 from torch.utils.data import IterableDataset
-from data._utils.common import TokenizerCollateFn
+from data._utils.llm import TokenizerCollateFn
 
 
 class TinyStoriesDataset(IterableDataset):

@@ -14,12 +14,17 @@ train_dataloader:
   collate_fn:
     _target_: data._utils.common.ZipCollateFn
     collate_fns:
-    - _target_: data._utils.common.DecoderLLMCollateFn
+    - _target_: data._utils.llm.DecoderLLMCollateFn
       tokenizer:
         _target_: data._core.tinystories.tinystories_tokenizer
       max_len: 512
-    - _target_: data._utils.cb_llm.TokenConceptDatasetCollateFn
-      max_len: 512
+    - _target_: data._utils.common.RenameCollateFn
+      collate_fn:
+      - _target_: data._utils.binary_multitask_llm.TokenMultitaskDatasetCollateFn
+        max_len: 512
+      rename_map:
+        _target_: builtins.dict
+        labels: concept_labels
     combiner:
       _target_: data._utils.common.dict_batch_combiner
       _partial_: true
@@ -40,12 +45,17 @@ val_dataloader:
   collate_fn:
     _target_: data._utils.common.ZipCollateFn
     collate_fns:
-    - _target_: data._utils.common.DecoderLLMCollateFn
+    - _target_: data._utils.llm.DecoderLLMCollateFn
       tokenizer:
         _target_: data._core.tinystories.tinystories_tokenizer
       max_len: 512
-    - _target_: data._utils.cb_llm.TokenConceptDatasetCollateFn
-      max_len: 512
+    - _target_: data._utils.common.RenameCollateFn
+      collate_fn:
+      - _target_: data._utils.binary_multitask_llm.TokenMultitaskDatasetCollateFn
+        max_len: 512
+      rename_map:
+        _target_: builtins.dict
+        labels: concept_labels
     combiner:
       _target_: data._utils.common.dict_batch_combiner
       _partial_: true

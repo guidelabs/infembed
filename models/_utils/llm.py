@@ -1,4 +1,4 @@
-from infembed.models._utils.common import MLP, clones
+from models._utils.common import MLP, clones
 import torch.nn as nn
 import torch.nn.functional as F
 import torch

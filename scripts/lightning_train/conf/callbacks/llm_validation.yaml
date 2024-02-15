@@ -6,7 +6,7 @@
     _target_: models._core.decoder_llm.LLM_get_preds
     _partial_: true
   get_target: 
-    _target_: data._utils.common.LLM_get_target
+    _target_: data._utils.llm.LLM_get_target
     _partial_: true
   write_path: 'metrics.csv'
   hook_strings:

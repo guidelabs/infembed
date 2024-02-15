@@ -9,7 +9,7 @@ train_dataloader:
   # batch_size: 48
   batch_size: 40
   collate_fn:
-    _target_: data._utils.common.DecoderLLMCollateFn
+    _target_: data._utils.llm.DecoderLLMCollateFn
     tokenizer:
       _target_: data._core.tinystories.tinystories_tokenizer
     max_len: 512
@@ -24,7 +24,7 @@ val_dataloader:
       data_path: '/home/ubuntu/Documents/infembed/files/tinystories/TinyStoriesV2-GPT4-valid.txt'
   batch_size: 40
   collate_fn:
-    _target_: data._utils.common.DecoderLLMCollateFn
+    _target_: data._utils.llm.DecoderLLMCollateFn
     tokenizer:
       _target_: data._core.tinystories.tinystories_tokenizer
     max_len: 64

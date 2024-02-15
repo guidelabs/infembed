@@ -7,7 +7,7 @@ import lightning as L
 import lightning.pytorch as pl
 import copy
 import torch
-from data._utils.common import subsequent_mask
+from data._utils.llm import subsequent_mask
 from torch.distributions.categorical import Categorical
 
 
