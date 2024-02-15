@@ -1,7 +1,6 @@
-from models._utils.common import _GenericLightningModule
+from models._utils.common import GenericLightningModule, clones
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import AutoTokenizer
 import lightning as L
 
 # import pytorch_lightning as pl
@@ -51,11 +50,6 @@ class Attention(nn.Module):
         x = torch.einsum("ijk,ikl->ijl", weights, _values)  # TODO: check
         # x = weights @ values.T
         return x  # batch size X seq len x `value_dim`
-
-
-def clones(module, N):
-    "Produce N identical layers."
-    return nn.ModuleList([copy.deepcopy(module) for _ in range(N)])
 
 
 class MultiAttention(nn.Module):
@@ -221,13 +215,7 @@ class Decoder(nn.Module):
         return x
 
     def full_generate(self, x, mask):
-        return self.generate(self.forward(x, mask))
-
-    # def generate(self, x):
-    #     """
-    #     `x` is the output of forward
-    #     """
-    #     return self.generator(x)
+        return self.generator(self.forward(x, mask))
 
     @property
     def max_len(self):
@@ -276,108 +264,70 @@ def constructor(
     )
 
 
-### define how to compute loss given huggingface tokenizer output ###
-
-
-class LLMCrossEntropyLoss(nn.Module):
-    def forward(self, output, attention_mask, labels):
-        # get per-example, per-position losses
-        # losses = F.cross_entropy(output, labels, reduction='none')
-        losses = F.cross_entropy(
-            output.reshape(-1, output.shape[-1]), labels.reshape(-1), reduction="none"
-        )
-        if False:
-            brute = sum(
-                [
-                    F.cross_entropy(_output, _labels, reduction="sum")
-                    for (_output, _labels) in zip(output, labels)
-                ]
-            )
-            print(losses.sum(), brute)
-
-        # multiply by attention mask to ignore padding locations
-        # losses *= attention_mask
-        losses *= attention_mask.reshape(-1)
-        # sum up losses over non-padding locations
-        loss = losses.sum()
-        # divide by total number of non-padding locations
-        loss /= attention_mask.sum()
-        return loss
-
-
-class LabelSmoothingLoss(nn.Module):
-    """
-    accepts output of tokenizer / dataloader, applies label smoothing to labels
-    inserts start token
-    sets true probabilities of positions where target is padding token to 0. `attention_mask` indicates which
-    are padding tokens
-    """
-
-    def __init__(self, criterion, smoothing):
-        super().__init__()
-        self.criterion = nn.KLDivLoss(reduction="sum")
-        self.register_buffer("smoothing", torch.tensor(smoothing))
-        # self.register_buffer('asdf', nn.Parameter(torch.ones(3)))
-        # self.ggg = nn.Linear(3,4)
-
-    def forward(self, output, attention_mask, labels):
-        """
-        `output` is the output of the generator - logits
-        shifting the targets to produce input is responsibility of training loop that calls this loss
-        """
-        batch_size, batch_len, num_tokens = output.shape
-        # create 3D version of target, also doing label smoothing
-        _labels = (
-            torch.ones(batch_size, batch_len, num_tokens).type_as(output)
-            * self.smoothing
-            / (num_tokens - 1)
-        )
-        # _labels.scatter_(1, labels.unsqueeze(1), 1 - self.smoothing)
-        labels = labels.unsqueeze(2)
-        _labels.scatter_(
-            2,
-            labels,
-            torch.ones(labels.shape).to(dtype=_labels.dtype, device=_labels.device)
-            * (1 - self.smoothing),
-        )
-        # set positions don't care about to zero
-        _labels = _labels * attention_mask[:, :, None]
-        # turn logits into log probabilities, which KLDivLoss requires
-        output = F.log_softmax(output, dim=2)
-        return self.criterion(output, _labels)
-
-
 ### define lightning module ###
 
 
-class DecoderLightningModule(_GenericLightningModule):
-    def __init__(
-        self,
-        decoder: Decoder,
-        loss_fn=None,
-        configure_optimizers=None,
-        scheduler_constructor=None,
-    ):
-        _GenericLightningModule.__init__(
-            self, decoder, loss_fn, configure_optimizers, scheduler_constructor
-        )
+class DecoderLightningModule(GenericLightningModule):
+    """
+    will be instantiated by hydra yaml
+    """
 
-    _STEP_DO_NOT_LOG_KEYS = ["output", "attention_mask", "labels", "input_ids", "mask"]
+    _STEP_DO_NOT_LOG_KEYS = ["prediction_logits", "attention_mask", "labels", "input_ids", "mask"]
 
     def _step(self, batch, batch_idx):
         d = self.forward(batch)
         return {
-            "loss": self.loss_fn(d["output"], batch["attention_mask"], batch["labels"]),
+            "loss": self.loss_fn(d["prediction_logits"], batch["attention_mask"], batch["labels"]),
             **d,
             **batch,
         }
 
     def forward(self, batch):
         # output is the log probabilities for each position and token
-        output = self.model.full_generate(batch["input_ids"], batch["mask"])
+        prediction_logits = self.decoder.full_generate(batch["input_ids"], batch["mask"])
         return {
-            "output": output,
+            "prediction_logits": prediction_logits,
         }
+
+
+class GreedyDecoder:
+    def __init__(self, max_len):
+        self.max_len = max_len
+
+    def __call__(self, model, eos_token, input_ids, temperature=None):
+        """
+        `input_ids` is 1D, representing a single example.
+        """
+        output_ids = []
+        for _ in range(self.max_len - len(input_ids)):
+            output = next(
+                iter(
+                    model.decoder.full_generate(
+                        x=input_ids.unsqueeze(0),
+                        mask=subsequent_mask(len(input_ids)).to(
+                            device=input_ids.device
+                        ),
+                    )
+                )
+            )
+            output = output[-1]  # get logits in last layer
+            if temperature is None or temperature == 0:
+                top_id = torch.argmax(output)
+            else:
+                output = output / temperature
+                top_id = Categorical(logits=output / temperature).sample()
+            if top_id == eos_token:
+                break
+            input_ids = torch.cat([input_ids, top_id.unsqueeze(0)])
+            output_ids.append(top_id)
+        return torch.Tensor(output_ids).long()
+
+
+def LLM_get_preds(out):
+    return out["prediction_logits"].cpu()
+
+
+### DEPRECATED ###
 
 
 class _DecoderLightningModule(L.LightningModule):
@@ -473,40 +423,48 @@ class _DecoderLightningModule(L.LightningModule):
     # @property
     def max_len(self):
         return self.decoder.max_len
+    
+
+### define how to compute loss given huggingface tokenizer output ###
 
 
-class GreedyDecoder:
-    def __init__(self, max_len):
-        self.max_len = max_len
+class LabelSmoothingLoss(nn.Module):
+    """
+    accepts output of tokenizer / dataloader, applies label smoothing to labels
+    inserts start token
+    sets true probabilities of positions where target is padding token to 0. `attention_mask` indicates which
+    are padding tokens
+    """
 
-    def __call__(self, model, eos_token, input_ids, temperature=None):
+    def __init__(self, criterion, smoothing):
+        super().__init__()
+        self.criterion = nn.KLDivLoss(reduction="sum")
+        self.register_buffer("smoothing", torch.tensor(smoothing))
+        # self.register_buffer('asdf', nn.Parameter(torch.ones(3)))
+        # self.ggg = nn.Linear(3,4)
+
+    def forward(self, output, attention_mask, labels):
         """
-        `input_ids` is 1D, representing a single example.
+        `output` is the output of the generator - logits
+        shifting the targets to produce input is responsibility of training loop that calls this loss
         """
-        output_ids = []
-        for _ in range(self.max_len - len(input_ids)):
-            output = next(
-                iter(
-                    model.decoder.full_generate(
-                        x=input_ids.unsqueeze(0),
-                        mask=subsequent_mask(len(input_ids)).to(
-                            device=input_ids.device
-                        ),
-                    )
-                )
-            )
-            output = output[-1]  # get logits in last layer
-            if temperature is None or temperature == 0:
-                top_id = torch.argmax(output)
-            else:
-                output = output / temperature
-                top_id = Categorical(logits=output / temperature).sample()
-            if top_id == eos_token:
-                break
-            input_ids = torch.cat([input_ids, top_id.unsqueeze(0)])
-            output_ids.append(top_id)
-        return torch.Tensor(output_ids).long()
-
-
-def LLM_get_preds(out):
-    return out["output"].cpu()
+        batch_size, batch_len, num_tokens = output.shape
+        # create 3D version of target, also doing label smoothing
+        _labels = (
+            torch.ones(batch_size, batch_len, num_tokens).type_as(output)
+            * self.smoothing
+            / (num_tokens - 1)
+        )
+        # _labels.scatter_(1, labels.unsqueeze(1), 1 - self.smoothing)
+        labels = labels.unsqueeze(2)
+        _labels.scatter_(
+            2,
+            labels,
+            torch.ones(labels.shape).to(dtype=_labels.dtype, device=_labels.device)
+            * (1 - self.smoothing),
+        )
+        # set positions don't care about to zero
+        _labels = _labels * attention_mask[:, :, None]
+        # turn logits into log probabilities, which KLDivLoss requires
+        output = F.log_softmax(output, dim=2)
+        return self.criterion(output, _labels)

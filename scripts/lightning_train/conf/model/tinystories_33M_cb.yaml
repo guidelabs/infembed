@@ -20,9 +20,9 @@ model:
   loss_fn:
     _target_: models._core.cb_decoder_llm.CBDecoderLoss
     token_loss:
-      _target_: models._core.decoder_llm.LLMCrossEntropyLoss
+      _target_: models._utils.llm.LLMCrossEntropyLoss
     concept_loss:
-      _target_: models._core.cb_decoder_llm.ConceptLoss
+      _target_: models._utils.llm.LLMBinaryMultitaskLoss
       equal_batch_contribution: true
     tradeoff: 0.1
   configure_optimizers:

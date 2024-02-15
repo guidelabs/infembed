@@ -1,6 +1,6 @@
 from models._core.decoder_llm import PositionEncoder, clones
-from models._utils.common import _GenericLightningModule
-from .decoder_llm import DecoderLayer, MultiAttention, FeedForward, Sublayer, Generator
+from models._utils.common import MLP, GenericLightningModule, LLMBinaryMultitaskMLPGenerator
+from .decoder_llm import DecoderLayer, MultiAttention, FeedForward, Sublayer
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
@@ -53,7 +53,7 @@ def constructor(
 
     if concept_generator_hidden_dims is None:
         concept_generator_hidden_dims = []
-    concept_generator = MLPConceptGenerator(
+    concept_generator = LLMBinaryMultitaskMLPGenerator(
         2 * concept_embedding_dim,
         concept_generator_hidden_dims,
         num_concepts,
@@ -78,33 +78,6 @@ def constructor(
     )
 
 
-class MLP(nn.Module):
-    def __init__(self, dims, pre_nonlinearity=False, post_nonlinearity=False):
-        super().__init__()
-        self.linears = nn.ModuleList(
-            [
-                nn.Linear(dim_in, dim_out)
-                for (dim_in, dim_out) in zip(dims[:-1], dims[1:])
-            ]
-        )
-        self.pre_nonlinearity, self.post_nonlinearity = (
-            pre_nonlinearity,
-            post_nonlinearity,
-        )
-
-    def forward(self, x):
-        linears = iter(self.linears)
-        if self.pre_nonlinearity:
-            x = F.relu(x)
-        x = next(linears)(x)
-        for linear in linears:
-            x = F.relu(x)
-            x = linear(x)
-        if self.post_nonlinearity:
-            x = F.relu(x)
-        return x
-
-
 class MLPConceptEmbedder(nn.Module):
     def __init__(self, dims, num_concepts, pre_nonlinearity, post_nonlinearity):
         super().__init__()
@@ -120,32 +93,6 @@ class MLPConceptEmbedder(nn.Module):
     def forward(self, x):
         # sequence length X model dim -> sequence length X number concepts X concept embedding dim
         return torch.stack([mlp(x) for mlp in self.mlps], dim=2)
-
-
-class MLPConceptGenerator(nn.Module):
-    def __init__(
-        self,
-        concept_embedding_dim,
-        hidden_dims,
-        num_concepts,
-        pre_nonlinearity,
-        post_nonlinearity,
-    ):
-        super().__init__()
-        self.mlps = clones(
-            MLP(
-                [concept_embedding_dim] + hidden_dims + [1],
-                pre_nonlinearity=pre_nonlinearity,
-                post_nonlinearity=post_nonlinearity,
-            ),
-            num_concepts,
-        )
-
-    def forward(self, x):
-        # sequence length X number concepts X 2 * concept embedding dim -> sequence length X number concepts
-        return torch.cat(
-            [self.mlps[c](x[:, :, c, :]) for c in range(x.shape[2])], dim=2
-        )
 
 
 class CBDecoder(nn.Module):
@@ -218,17 +165,10 @@ class CBDecoder(nn.Module):
         }
 
 
-class CBDecoderLightningModule(_GenericLightningModule):
-    def __init__(
-        self,
-        decoder: CBDecoder,
-        loss_fn=None,
-        configure_optimizers=None,
-        scheduler_constructor=None,
-    ):
-        _GenericLightningModule.__init__(
-            self, decoder, loss_fn, configure_optimizers, scheduler_constructor
-        )
+class CBDecoderLightningModule(GenericLightningModule):
+    """
+    will be instantiated by hydra yaml
+    """
 
     _STEP_DO_NOT_LOG_KEYS = [
         "prediction_logits",
@@ -274,50 +214,3 @@ class CBDecoderLoss(nn.Module):
             self.tradeoff
             * self.concept_loss(concept_logits, attention_mask, concept_labels)
         )
-
-
-class ConceptLoss(nn.Module):
-    def __init__(self, equal_batch_contribution: bool = True):
-        super().__init__()
-        self.equal_batch_contribution = equal_batch_contribution
-
-    def forward(self, concept_logits, attention_mask, concept_labels):
-        """
-        `concept_logits` shape: batch size X sequence length X number concepts
-        `concept_labels` shape: batch size X sequence length X number concepts
-        interpretation of `concept_labels[i,t,c]`: whether for example i, concept c
-        exists in x[0:i+1], i.e. the prefix ending at and including token i.
-
-        TODO: to get `concept_labels`, we will train a token-level multi-label classifier
-        and apply to each token for each concept.  training this would be non-standard,
-        because we will only assume we know whether a concept is present in a sequence, but
-        not which prefixes it is present in, i.e. we don't have token-level labels.  this is
-        a case of learning a classifier with ambiguous labels.  to start simple, for each sequence
-        for which a concept is present, we can assume the concept is present in all prefixes,
-        i.e. all token-level labels for that concept are positive.  this should actually do
-        okay, because models can handle noisy labels.
-        """
-
-        def _concept_loss(_concept_logits, _concept_labels, _attention_mask):
-            return (
-                F.binary_cross_entropy_with_logits(
-                    _concept_logits, _concept_labels, reduction="none"
-                )
-                * _attention_mask[:, None]
-            ).sum() / (
-                torch.sum(_attention_mask) * _concept_logits.shape[1]
-            )  # scale by number of concepts so that loss is average per concept
-
-        if not self.equal_batch_contribution:
-            return _concept_loss(concept_logits, concept_labels, attention_mask)
-        else:
-            return torch.mean(
-                torch.Tensor(
-                    [
-                        _concept_loss(_concept_logits, _concept_labels, _attention_mask)
-                        for (_concept_logits, _concept_labels, _attention_mask) in zip(
-                            concept_logits, concept_labels, attention_mask
-                        )
-                    ]
-                )
-            )
