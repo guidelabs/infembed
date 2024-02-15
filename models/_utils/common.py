@@ -1,9 +1,11 @@
+import copy
 from typing import Callable, Dict, Optional
 from data._utils.common import default_batch_to_target, default_batch_to_x
 import torch
 import torch.nn as nn
 import lightning.pytorch as pl
 import lightning as L
+import torch.nn.functional as F
 
 
 def default_checkpoints_load_func(model, path, device, key=None):
@@ -89,7 +91,7 @@ class GenericConfigureOptimizers:
         return self.optimizer_constructor(self.parameters_getter(model=model))
 
 
-class _GenericLightningModule(L.LightningModule):
+class GenericLightningModule(L.LightningModule):
     def __init__(self, model, loss_fn=None, configure_optimizers=None, scheduler_constructor=None):
         super().__init__()
         self.model, self.loss_fn, self._configure_optimizers = (
@@ -110,6 +112,11 @@ class _GenericLightningModule(L.LightningModule):
             return [optimizer], [scheduler]
 
     def _step(self, batch, batch_idx) -> Dict:
+        """
+        this should call forward, additionally use the batch to compute things
+        that depend on labels, and return a dictionary.  a subset of its output will be
+        logged
+        """
         raise NotImplementedError
 
     def training_step(self, batch, batch_idx):
@@ -132,9 +139,50 @@ class _GenericLightningModule(L.LightningModule):
 
     def prediction_step(self, batch, batch_idx):
         raise NotImplementedError
+    
+    def forward(self, batch):
+        """
+        this should return whatever can be computed without labels, and return a
+        dictionary
+        """
+    
+
+class MLP(nn.Module):
+    def __init__(self, dims, pre_nonlinearity=False, post_nonlinearity=False):
+        super().__init__()
+        self.linears = nn.ModuleList(
+            [
+                nn.Linear(dim_in, dim_out)
+                for (dim_in, dim_out) in zip(dims[:-1], dims[1:])
+            ]
+        )
+        self.pre_nonlinearity, self.post_nonlinearity = (
+            pre_nonlinearity,
+            post_nonlinearity,
+        )
+
+    def forward(self, x):
+        linears = iter(self.linears)
+        if self.pre_nonlinearity:
+            x = F.relu(x)
+        x = next(linears)(x)
+        for linear in linears:
+            x = F.relu(x)
+            x = linear(x)
+        if self.post_nonlinearity:
+            x = F.relu(x)
+        return x
+    
+
+def clones(module, N):
+    "Produce N identical layers."
+    return nn.ModuleList([copy.deepcopy(module) for _ in range(N)])
 
 
-class GenericLightningModel(pl.LightningModule):
+### DEPRECATED ###
+
+
+class _GenericLightningModel(pl.LightningModule):
     """
     the most basic pl wrapper whose purpose is just to train.  doesn't log anything
     besides loss

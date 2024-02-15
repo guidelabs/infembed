@@ -19,7 +19,7 @@ model:
   #   _target_: torch.nn.KLDivLoss
   #   reduction: 'sum'
   # smoothing: 1e-3
-    _target_: models._core.decoder_llm.LLMCrossEntropyLoss
+    _target_: models._utils.llm.LLMCrossEntropyLoss
 eval: true
 checkpoints_load_func: 
   _target_: models._utils.common.default_checkpoints_load_func
