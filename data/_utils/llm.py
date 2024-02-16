@@ -74,3 +74,5 @@ class DecoderLLMCollateFn:
 def LLM_get_target(batch):
     labels = batch["labels"]
     return labels.masked_fill(batch["attention_mask"] == 0, IGNORE_INDEX).cpu()
+
+IGNORE_INDEX = -100

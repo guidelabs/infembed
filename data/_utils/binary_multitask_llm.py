@@ -2,6 +2,7 @@ from typing import List
 from torch.utils.data import Dataset
 from torch import Tensor
 import torch
+from torch.utils.data import default_collate
 
 
 """
@@ -13,6 +14,17 @@ class MultitaskDataset(Dataset):
     returns vector (corresponding to task labels) for each example
     """
     pass
+
+
+class MultiTaskDatasetCollateFn(Dataset):
+    """
+    just applies default collate function, then put into dictionary with one item whose
+    key is 'example_labels'
+    """
+    def __call__(self, examples: List[Tensor]):
+        return {
+            'example_labels': default_collate(examples)
+        }
 
 
 class TokenMultitaskDataset(Dataset):

@@ -1,8 +1,8 @@
 _target_: models._utils.common.load_model
 model:
-  _target_: models._core.cb_decoder_llm.CBDecoderLightningModule
+  _target_: models._core.binary_multitask_decoder_llm.BinaryMultitaskDecoderLightningModule
   decoder:
-    _target_: models._core.cb_decoder_llm.constructor
+    _target_: models._core.binary_multitask_decoder_llm.constructor
     model_dim: 768
     key_dim: 48
     value_dim: 48
@@ -13,18 +13,15 @@ model:
     num_tokens: 10000
     max_len: 2048
     num_concepts: 2
-    concept_embedding_dim: 32
-    concept_embedder_hidden_dims: null
-    concept_generator_hidden_dims: null
-    generator_hidden_dims: null
+    concept_generator_hidden_dims:
+      - 10
   loss_fn:
-    _target_: models._utils.cb_llm.CBDecoderLoss
-    token_loss:
-      _target_: models._utils.llm.LLMCrossEntropyLoss
-    concept_loss:
+    _target_: models._utils.binary_multitask_llm.LLMMILImputeLoss
+    # _target_: models._utils.binary_multitask_llm.LLMMilMaxLoss
+    llm_loss:
       _target_: models._utils.binary_multitask_llm.LLMBinaryMultitaskLoss
       equal_batch_contribution: true
-    tradeoff: 0.1
+      # equal_batch_contribution: false
   configure_optimizers:
     _target_: models._utils.common.GenericConfigureOptimizers
     parameters_getter:
@@ -38,7 +35,7 @@ model:
       betas:
       - 0.9
       - 0.95
-eval: true
+eval: false
 checkpoints_load_func: 
   _target_: models._utils.common.default_checkpoints_load_func
   key: state_dict

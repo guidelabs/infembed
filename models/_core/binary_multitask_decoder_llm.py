@@ -1,5 +1,5 @@
-from infembed.models._utils.common import _GenericLightningModule, clones
-from infembed.models._utils.llm import LLMBinaryMultitaskMLPGenerator
+from models._utils.common import GenericLightningModule, clones
+from models._utils.binary_multitask_llm import LLMBinaryMultitaskMLPGenerator
 from models._core.decoder_llm import (
     Decoder,
     DecoderLayer,
@@ -43,6 +43,7 @@ def constructor(
         num_concepts,
         pre_nonlinearity=True,
         post_nonlinearity=False,
+        task_specific_dim=False,
     )
 
     return Decoder(
@@ -52,13 +53,24 @@ def constructor(
     )
 
 
-class BinaryMultitaskDecoderLightningModule(_GenericLightningModule):
+class BinaryMultitaskDecoderLightningModule(GenericLightningModule):
     """
     lightning module for the binary multitask (LLM) scenario.  not specialized to
     decoders.  assumes that batch has keys for 'example_labels' (per-example labels)
     and 'labels' (per-token labels), though they can be none.
     will be instantiated by hydra yaml.
     """
+
+    _STEP_DO_NOT_LOG_KEYS = [
+        "prediction_logits",
+        "concept_labels",
+        "attention_mask",
+        "example_labels",
+        "labels",
+        "input_ids",
+        "mask",
+    ]
+
     def _step(self, batch, batch_idx):
         d = self.forward(batch)
         return {
@@ -74,41 +86,14 @@ class BinaryMultitaskDecoderLightningModule(_GenericLightningModule):
 
     def forward(self, batch):
         # output is the log probabilities for each position and token
-        prediction_logits = self.model.full_generate(batch["input_ids"], batch["mask"])
+        prediction_logits = self.decoder.full_generate(
+            batch["input_ids"], batch["mask"]
+        )
         return {
             "prediction_logits": prediction_logits,
         }
 
 
-class LLMMILImputeLoss(nn.Module):
-    """
-    for the LLM MIL scenario (have per-example and optionally, per-token labels), imputes
-    the per-token labels to be the same as the per-example label, and applies a provided
-    per-token loss
-    """
-    def __init__(self, llm_loss):
-        super().__init__()
-        self.llm_loss = llm_loss
-
-    def forward(self, prediction_logits, attention_mask, labels, example_labels):
-        _labels = torch.zeros(prediction_logits.shape)
-        for (__labels, example_label) in zip(_labels, example_labels):
-            __labels.masked_fill(example_label[None, :].bool(), 1)
-        return self.llm_loss(prediction_logits, attention_mask, _labels)
-    
-
-class LLMMilMaxLoss(nn.Module):
-    """
-    for the LLM MIL scenario (have per-example and optionally, per-token labels), takes
-    the max of the per-token predictions to get a per-example prediction, and gives it
-    to a provided per-example loss.
-    TODO: can try a leaky max or other aggregation function
-    """
-    def __init__(self, loss):
-        super().__init__()
-        self.loss = loss
-
-    def forward(self, prediction_logits, attention_mask, labels, example_labels):
-        _prediction_logits = prediction_logits.masked_fill(attention_mask.bool(), -1e9)
-        _prediction_logits = torch.max(_prediction_logits, dim=1)
-        return self.loss(_prediction_logits, example_labels)
+def last_token_get_preds(out):
+    preds = out['prediction_logits']
+    return {f"task_{t}": preds[:,-1,t] for t in range(preds.shape[2])}

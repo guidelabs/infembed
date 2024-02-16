@@ -323,8 +323,8 @@ class GreedyDecoder:
         return torch.Tensor(output_ids).long()
 
 
-def LLM_get_preds(out):
-    return out["prediction_logits"].cpu()
+def LLM_get_preds(outputs):
+    return outputs["prediction_logits"].detach().cpu()
 
 
 ### DEPRECATED ###

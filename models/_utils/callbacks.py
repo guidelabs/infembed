@@ -2,6 +2,7 @@ from typing import Dict, List, Optional, Tuple
 from models._core.decoder_llm import GreedyDecoder
 from lightning.pytorch.callbacks import Callback
 import wandb
+from torchmetrics import MetricCollection
 
 
 class GenericCallback(Callback):
@@ -168,12 +169,14 @@ class TorchMetricsCallback(GenericCallback):
         get_preds: Callable = default_get_preds,
         get_target: Callable = default_get_target,
         write_path: str = 'metrics.csv',
+        get_preds_and_target: Optional[Callable] = None,
     ):
         # super().__init__(write_interval='batch_and_epoch')
         super().__init__(hook_strings=hook_strings)
-        self.metrics = dict(metrics)
+        self.metrics = metrics
         self.get_preds, self.get_target = get_preds, get_target
         self.write_path = write_path
+        self.get_preds_and_target = get_preds_and_target
 
     def _on_batch_end(
         self,
@@ -185,20 +188,35 @@ class TorchMetricsCallback(GenericCallback):
         phase,
     ):
         
-        preds = self.get_preds(outputs)
-        target = self.get_target(batch)
+        if self.get_preds_and_target is None:
+            preds = self.get_preds(outputs)
+            target = self.get_target(batch)
+        else:
+            preds, target = self.get_preds_and_target(outputs, batch)
 
-        for (_, metric) in self.metrics.items():
-            val = metric(preds, target)
-            #metric(preds.cpu(), target.cpu())
+        getattr(pl_module, f"{phase}_metrics")(preds, target)
+        # for (_, metric) in self.metrics.items():
+        #     val = metric(preds, target)
+        #     #metric(preds.cpu(), target.cpu())
 
     def _on_start(self, trainer, pl_module, phase: str):
         # pl_module.metrics = torchmetrics.MetricCollection(list(self.metrics.values()))
-        setattr(pl_module, f"{phase}_metrics", torchmetrics.MetricCollection(self.metrics))
+        setattr(pl_module, f"{phase}_metrics", torchmetrics.MetricCollection(dict(self.metrics)))
+        #setattr(pl_module, f"{phase}_metrics", torchmetrics.MetricCollection(self.metrics))
         # pl_module.metrics = torchmetrics.MetricCollection(self.metrics)
 
+    def _get_formatted_metrics(self, metric):
+        import pdb
+        pdb.set_trace()
+        return {_metric: float(val) for (_metric, val) in metric.compute()}
+
     def _on_epoch_end(self, trainer, pl_module, phase: str):
-        d = {f"{phase}_{name}": float(metric.compute()) for (name, metric) in self.metrics.items()}
+        d = {phase: self._get_formatted_metrics(getattr(pl_module, f"{phase}_metrics"))}
+
+
+        #d = {f"{phase}_{name}": float(metric.compute()) for (name, metric) in self.metrics.items()}
+        import pdb
+        pdb.set_trace()
         self.log_dict(d, on_epoch=True)
         # pd.DataFrame({"metric_val": d}).to_csv(open(self.write_path, 'w'))
 

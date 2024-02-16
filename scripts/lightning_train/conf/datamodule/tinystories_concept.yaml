@@ -4,10 +4,6 @@ train_dataloader:
   dataset:
     _target_: data._utils.common.ZipIterableDataset
     datasets:
-      - _target_: data._utils.common.LimitIterableDataset
-        dataset:
-          _target_: data._core.tinystories.TinyStoriesDataset
-          data_path: '/home/ubuntu/Documents/infembed/files/tinystories/TinyStoriesV2-GPT4-train.txt'
       - _target_: data._utils.cb_llm.FnsTokenConceptDataset
         dataset: 
           _target_: data._core.tinystories.TinyStoriesDataset
@@ -23,15 +19,15 @@ train_dataloader:
           _partial_: true
         tokenizer: 
           _target_: data._core.tinystories.tinystories_tokenizer
+      - _target_: data._utils.cb_llm.FnsConceptDataset
+        dataset: ${..[0][dataset]}
+        fns: ${..[0][fns]}
+      - ${.[0][dataset]}
   # batch_size: 48
   batch_size: 40
   collate_fn:
     _target_: data._utils.common.ZipCollateFn
     collate_fns:
-    - _target_: data._utils.llm.DecoderLLMCollateFn
-      tokenizer:
-        _target_: data._core.tinystories.tinystories_tokenizer
-      max_len: 512
     - _target_: data._utils.common.RenameCollateFn
       collate_fn:
         _target_: data._utils.binary_multitask_llm.TokenMultitaskDatasetCollateFn
@@ -39,6 +35,11 @@ train_dataloader:
       rename_map:
         _target_: builtins.dict
         labels: concept_labels
+    - _target_: data._utils.binary_multitask_llm.MultiTaskDatasetCollateFn
+    - _target_: data._utils.llm.DecoderLLMCollateFn
+      tokenizer:
+        _target_: data._core.tinystories.tinystories_tokenizer
+      max_len: 512 
     combiner:
       _target_: data._utils.common.dict_batch_combiner
       _partial_: true
@@ -49,10 +50,6 @@ val_dataloader:
   dataset:
     _target_: data._utils.common.ZipIterableDataset
     datasets:
-      - _target_: data._utils.common.LimitIterableDataset
-        dataset:
-          _target_: data._core.tinystories.TinyStoriesDataset
-          data_path: '/home/ubuntu/Documents/infembed/files/tinystories/TinyStoriesV2-GPT4-valid.txt'
       - _target_: data._utils.cb_llm.FnsTokenConceptDataset
         dataset: 
           _target_: data._core.tinystories.TinyStoriesDataset
@@ -68,15 +65,15 @@ val_dataloader:
           _partial_: true
         tokenizer: 
           _target_: data._core.tinystories.tinystories_tokenizer
+      - _target_: data._utils.cb_llm.FnsConceptDataset
+        dataset: ${..[0][dataset]}
+        fns: ${..[0][fns]}
+      - ${.[0][dataset]}
   # batch_size: 48
   batch_size: 40
   collate_fn:
     _target_: data._utils.common.ZipCollateFn
     collate_fns:
-    - _target_: data._utils.llm.DecoderLLMCollateFn
-      tokenizer:
-        _target_: data._core.tinystories.tinystories_tokenizer
-      max_len: 512
     - _target_: data._utils.common.RenameCollateFn
       collate_fn:
         _target_: data._utils.binary_multitask_llm.TokenMultitaskDatasetCollateFn
@@ -84,6 +81,11 @@ val_dataloader:
       rename_map:
         _target_: builtins.dict
         labels: concept_labels
+    - _target_: data._utils.binary_multitask_llm.MultiTaskDatasetCollateFn
+    - _target_: data._utils.llm.DecoderLLMCollateFn
+      tokenizer:
+        _target_: data._core.tinystories.tinystories_tokenizer
+      max_len: 512 
     combiner:
       _target_: data._utils.common.dict_batch_combiner
       _partial_: true
