@@ -1,6 +1,5 @@
 import copy
 from typing import Dict, List, Optional, Tuple
-from models._core.decoder_llm import GreedyDecoder
 from lightning.pytorch.callbacks import Callback
 import wandb
 from torchmetrics import MetricCollection
@@ -127,6 +126,7 @@ class DecoderCallback(GenericCallback):
         self.num_samples_per_temperature = num_samples_per_temperature
 
     def _on_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, phase: str):
+        from models._utils.llm import GreedyDecoder
         decoder = GreedyDecoder(
             max_len=pl_module.max_len if self.max_len is None else self.max_len
         )

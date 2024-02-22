@@ -130,12 +130,16 @@ class CBDecoder(nn.Module):
             x = layer(x, mask)
         return x
 
-    def full_generate(self, x, mask):
+    def full_generate(self, x, mask, concept_probs=None):
         """
         `x` is the output of forward.  has shape batch size X sequence length X model dimension
         it outputs two predictions:
             1) for each token, the logit for each possible prediction
             2) for each token, for each concept, the logit for whether the concept is present
+
+        `concept_probs` has shape batch size X sequence length X number concepts.  if
+        a position is -1, it means we use the predicted concept probability for the position.
+        otherwise, the position should be between 0 and 1, representing the probability.
         """
         x = self.forward(x, mask)
         positive_concept_embeddings = self.positive_concept_embedder(
@@ -147,7 +151,15 @@ class CBDecoder(nn.Module):
         concept_logits = self.concept_generator(
             torch.cat([positive_concept_embeddings, negative_concept_embeddings], dim=3)
         )  # batch size X sequence length X number concepts
-        concept_probs = torch.sigmoid(concept_logits)
+        _concept_probs = torch.sigmoid(concept_logits)
+
+        # combine `_concept_probs` with the provided `concept_probs`
+        if concept_probs is None:
+            concept_probs = _concept_probs
+        else:
+            use_provided = (concept_probs != -1).to(dtype=_concept_probs.dtype)
+            concept_probs = (_concept_probs * (1. - use_provided)) + (concept_probs * use_provided)
+
         concept_embeddings = (
             concept_probs[:, :, :, None] * positive_concept_embeddings
         ) + (

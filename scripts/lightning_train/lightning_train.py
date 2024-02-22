@@ -10,7 +10,7 @@ import torch
 WANDB_CONFIG_NAME = 'wandb'
 
 
-@hydra.main(config_path="conf", config_name="tinystories", version_base="1.3")
+@hydra.main(config_path="conf", config_name="tinystories_33M_cb_read_julius_only", version_base="1.3")
 def run(cfg: DictConfig):
     
     use_wandb = WANDB_CONFIG_NAME in cfg
