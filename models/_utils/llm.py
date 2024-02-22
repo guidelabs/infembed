@@ -1,7 +1,9 @@
+from models._utils.callbacks import GenericCallback
 from models._utils.common import MLP, clones
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
+import pandas as pd
 
 
 """
@@ -14,11 +16,14 @@ class LLMCrossEntropyLoss(nn.Module):
     for sequence data, computes cross entropy loss.  currently averages over all
     positions, instead of having each batch contribute equally
     """
+
     def forward(self, prediction_logits, attention_mask, labels):
         # get per-example, per-position losses
         # losses = F.cross_entropy(output, labels, reduction='none')
         losses = F.cross_entropy(
-            prediction_logits.reshape(-1, prediction_logits.shape[-1]), labels.reshape(-1), reduction="none"
+            prediction_logits.reshape(-1, prediction_logits.shape[-1]),
+            labels.reshape(-1),
+            reduction="none",
         )
         if False:
             brute = sum(
@@ -37,3 +42,36 @@ class LLMCrossEntropyLoss(nn.Module):
         # divide by total number of non-padding locations
         loss /= attention_mask.sum()
         return loss
+
+
+class WriteTokensCallback(GenericCallback):
+    """
+    writes tokens to a csv.  assumes dataframe holding the tokens can fit in memory
+    """
+
+    def __init__(self, tokenizer, hook_strings):
+        GenericCallback.__init__(self, hook_strings)
+        self.tokenizer = tokenizer
+
+    def _on_epoch_start(self, trainer, pl_module, phase: str):
+        # create list to store tokens
+        self.example_tokens = []
+
+    def _on_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, phase: str):
+        for _input_ids, _attention_mask in zip(
+            batch["input_ids"], batch["attention_mask"]
+        ):
+            _example_tokens = [
+                self.tokenizer.decode(id)
+                for (id, mask) in zip(_input_ids, _attention_mask)
+                if mask == 1
+            ]
+            self.example_tokens.append(_example_tokens)
+
+    def _on_epoch_end(self, trainer, pl_module, phase: str):
+        # create the dataframe
+        ds = []
+        for (i, _example_tokens) in enumerate(self.example_tokens):
+            for (t, token) in enumerate(_example_tokens):
+                ds.append({'i':i, 't':t, 'token': token})
+        pd.DataFrame(ds).to_csv(f"{phase}_tokens.csv")

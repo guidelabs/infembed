@@ -38,6 +38,8 @@ class FnsTokenConceptDataset(TokenMultitaskDataset):
     def _get_concepts(self, example):
         # first convert to tokens
         input_ids = self.tokenizer(example)["input_ids"]
+        if len(input_ids) == 0:
+            return torch.zeros(0, len(self.fns)).bool()
         token_strs = [self.tokenizer.decode(input_id) for input_id in input_ids]
         return Tensor(
             [

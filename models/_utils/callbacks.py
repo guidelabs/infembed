@@ -1,8 +1,18 @@
+import copy
 from typing import Dict, List, Optional, Tuple
 from models._core.decoder_llm import GreedyDecoder
 from lightning.pytorch.callbacks import Callback
 import wandb
 from torchmetrics import MetricCollection
+from torchmetrics.wrappers import MultitaskWrapper
+from typing import Callable, Dict, List
+import torch
+
+# from pytorch_lightning.callbacks import BasePredictionWriter
+from lightning.pytorch.callbacks import BasePredictionWriter
+import torchmetrics
+import pandas as pd
+import os
 
 
 class GenericCallback(Callback):
@@ -144,31 +154,22 @@ class DecoderCallback(GenericCallback):
         wandb.log({"greedy_text": table})
 
 
-from typing import Callable, Dict, List
-import torch
-# from pytorch_lightning.callbacks import BasePredictionWriter
-from lightning.pytorch.callbacks import BasePredictionWriter
-import torchmetrics
-import pandas as pd
-import os
-
-
 def default_get_preds(out):
-    return out.cpu()
+    return out.detach().cpu()
 
 
 def default_get_target(batch):
-    return batch[-1].cpu()
+    return batch[-1].detach().cpu()
 
 
 class TorchMetricsCallback(GenericCallback):
     def __init__(
         self,
-        metrics: Dict[str, torchmetrics.Metric],
+        metrics: List[torchmetrics.Metric],
         hook_strings: List[str],
         get_preds: Callable = default_get_preds,
         get_target: Callable = default_get_target,
-        write_path: str = 'metrics.csv',
+        write_path: str = "metrics.csv",
         get_preds_and_target: Optional[Callable] = None,
     ):
         # super().__init__(write_interval='batch_and_epoch')
@@ -187,7 +188,7 @@ class TorchMetricsCallback(GenericCallback):
         batch_idx,
         phase,
     ):
-        
+
         if self.get_preds_and_target is None:
             preds = self.get_preds(outputs)
             target = self.get_target(batch)
@@ -195,38 +196,76 @@ class TorchMetricsCallback(GenericCallback):
             preds, target = self.get_preds_and_target(outputs, batch)
 
         getattr(pl_module, f"{phase}_metrics")(preds, target)
-        # for (_, metric) in self.metrics.items():
-        #     val = metric(preds, target)
-        #     #metric(preds.cpu(), target.cpu())
 
     def _on_start(self, trainer, pl_module, phase: str):
-        # pl_module.metrics = torchmetrics.MetricCollection(list(self.metrics.values()))
-        setattr(pl_module, f"{phase}_metrics", torchmetrics.MetricCollection(dict(self.metrics)))
-        #setattr(pl_module, f"{phase}_metrics", torchmetrics.MetricCollection(self.metrics))
-        # pl_module.metrics = torchmetrics.MetricCollection(self.metrics)
-
-    def _get_formatted_metrics(self, metric):
-        import pdb
-        pdb.set_trace()
-        return {_metric: float(val) for (_metric, val) in metric.compute()}
+        setattr(
+            pl_module, f"{phase}_metrics", torchmetrics.MetricCollection(self.metrics)
+        )
 
     def _on_epoch_end(self, trainer, pl_module, phase: str):
-        d = {phase: self._get_formatted_metrics(getattr(pl_module, f"{phase}_metrics"))}
-
-
-        #d = {f"{phase}_{name}": float(metric.compute()) for (name, metric) in self.metrics.items()}
-        import pdb
-        pdb.set_trace()
+        d = {
+            f"{phase}_{metric}": float(val)
+            for (metric, val) in getattr(pl_module, f"{phase}_metrics")
+            .compute()
+            .items()
+        }
         self.log_dict(d, on_epoch=True)
-        # pd.DataFrame({"metric_val": d}).to_csv(open(self.write_path, 'w'))
+
+
+class MultitaskTorchMetricsCallback(TorchMetricsCallback):
+    def __init__(
+        self,
+        metrics: List[torchmetrics.Metric],
+        hook_strings: List[str],
+        num_tasks: int,
+        get_preds: Callable = default_get_preds,
+        get_target: Callable = default_get_target,
+        write_path: str = "metrics.csv",
+        get_preds_and_target: Optional[Callable] = None,
+    ):
+        TorchMetricsCallback.__init__(
+            self,
+            metrics,
+            hook_strings,
+            get_preds,
+            get_target,
+            write_path,
+            get_preds_and_target,
+        )
+        self.num_tasks = num_tasks
+
+    def _on_start(self, trainer, pl_module, phase: str):
+        setattr(
+            pl_module,
+            f"{phase}_metrics",
+            MultitaskWrapper(
+                {
+                    f"task_{t}": torchmetrics.MetricCollection(
+                        copy.deepcopy(self.metrics)
+                    )
+                    for t in range(self.num_tasks)
+                }
+            ),
+        )
+
+    def _on_epoch_end(self, trainer, pl_module, phase: str):
+        d = {
+            f"{task}_{phase}_{metric}": float(val)
+            for (task, d) in getattr(pl_module, f"{phase}_metrics").compute().items()
+            for (metric, val) in d.items()
+        }
+        self.log_dict(d, on_epoch=True)
 
 
 class BatchEndWriter(BasePredictionWriter):
     """
     takes extractor functions of the batch or predictions and writes them to file
     """
-    def __init__(self, batch_extractors_d: Dict = {}, prediction_extractors_d: Dict = {}):
-        super().__init__(write_interval='batch')
+
+    def __init__(
+        self, batch_extractors_d: Dict = {}, prediction_extractors_d: Dict = {}
+    ):
+        super().__init__(write_interval="batch")
         self.batch_extractors_d = batch_extractors_d
         self.prediction_extractors_d = prediction_extractors_d
 
@@ -240,7 +279,7 @@ class BatchEndWriter(BasePredictionWriter):
         batch_idx,
         dataloader_idx,
     ):
-        for (name, batch_extractor) in self.batch_extractors_d.items():
+        for name, batch_extractor in self.batch_extractors_d.items():
             try:
                 os.makedirs(name)
             except:
@@ -250,7 +289,7 @@ class BatchEndWriter(BasePredictionWriter):
                 extracted = pd.DataFrame(extracted)
             extracted.to_csv(f"{name}/{batch_idx}.csv")
 
-        for (name, prediction_extractor) in self.prediction_extractors_d.items():
+        for name, prediction_extractor in self.prediction_extractors_d.items():
             try:
                 os.makedirs(name)
             except:

@@ -1,5 +1,6 @@
 import copy
-from typing import Callable, Dict, Optional
+from functools import reduce
+from typing import Any, Callable, Dict, List, Optional
 from data._utils.common import default_batch_to_target, default_batch_to_x
 import torch
 import torch.nn as nn
@@ -8,10 +9,35 @@ import lightning as L
 import torch.nn.functional as F
 
 
-def default_checkpoints_load_func(model, path, device, key=None):
+def default_checkpoints_load_func(
+    model,
+    path,
+    device,
+    key=None,
+    remove_prefix=None,
+    add_prefix=None,
+    active_module_names: Optional[List[str]] = None,
+):
+    # get state dict
     state = torch.load(open(path, "rb"), map_location=device)
     state_dict = state if key is None else state[key]
-    model.load_state_dict(state_dict, strict=False)
+
+    # modify keys if needed
+    if remove_prefix is not None:
+        state_dict = {
+            key[len(remove_prefix) :]: val for (key, val) in state_dict.items()
+        }
+    if add_prefix is not None:
+        state_dict = {(add_prefix + key): val for (key, val) in state_dict.items()}
+    print(model.load_state_dict(state_dict, strict=False))
+
+    # set active modules if needed
+    if active_module_names is not None:
+        for p in model.parameters():
+            p.requires_grad = False
+        for module_name in active_module_names:
+            for p in _get_module_from_name(model, module_name).parameters():
+                p.requires_grad = True
 
 
 def lightning_checkpoints_load_func(model, path):
@@ -40,7 +66,8 @@ def load_model(
     """
     if checkpoints_load_func is not None and checkpoint is not None:
         checkpoints_load_func(model=model, path=checkpoint, device=device)
-    # model.to(device=device)
+    else:
+        model.to(device=device)
     if eval:
         model.eval()
     else:
@@ -92,7 +119,13 @@ class GenericConfigureOptimizers:
 
 
 class GenericLightningModule(L.LightningModule):
-    def __init__(self, decoder, loss_fn=None, configure_optimizers=None, scheduler_constructor=None):
+    def __init__(
+        self,
+        decoder,
+        loss_fn=None,
+        configure_optimizers=None,
+        scheduler_constructor=None,
+    ):
         super().__init__()
         self.decoder, self.loss_fn, self._configure_optimizers = (
             decoder,
@@ -122,7 +155,11 @@ class GenericLightningModule(L.LightningModule):
     def training_step(self, batch, batch_idx):
         d = self._step(batch, batch_idx)
         self.log_dict(
-            {f"train_{key}": val for (key, val) in d.items() if key[0] != "_" and key not in self._STEP_DO_NOT_LOG_KEYS},
+            {
+                f"train_{key}": val
+                for (key, val) in d.items()
+                if key[0] != "_" and key not in self._STEP_DO_NOT_LOG_KEYS
+            },
             on_step=True,
             on_epoch=True,
         )
@@ -131,7 +168,11 @@ class GenericLightningModule(L.LightningModule):
     def validation_step(self, batch, batch_idx):
         d = self._step(batch, batch_idx)
         self.log_dict(
-            {f"validation_{key}": val for (key, val) in d.items() if key[0] != "_" and key not in self._STEP_DO_NOT_LOG_KEYS},
+            {
+                f"validation_{key}": val
+                for (key, val) in d.items()
+                if key[0] != "_" and key not in self._STEP_DO_NOT_LOG_KEYS
+            },
             on_step=True,
             on_epoch=True,
         )
@@ -139,13 +180,13 @@ class GenericLightningModule(L.LightningModule):
 
     def prediction_step(self, batch, batch_idx):
         raise NotImplementedError
-    
+
     def forward(self, batch):
         """
         this should return whatever can be computed without labels, and return a
         dictionary
         """
-    
+
 
 class MLP(nn.Module):
     def __init__(self, dims, pre_nonlinearity=False, post_nonlinearity=False):
@@ -172,11 +213,26 @@ class MLP(nn.Module):
         if self.post_nonlinearity:
             x = F.relu(x)
         return x
-    
+
 
 def clones(module, N):
     "Produce N identical layers."
     return nn.ModuleList([copy.deepcopy(module) for _ in range(N)])
+
+
+def _get_module_from_name(model: nn.Module, layer_name: str) -> Any:
+    r"""
+    Returns the module (layer) object, given its (string) name
+    in the model.
+
+    Args:
+            name (str): Module or nested modules name string in self.model
+
+    Returns:
+            The module (layer) in self.model.
+    """
+
+    return reduce(getattr, layer_name.split("."), model)
 
 
 ### DEPRECATED ###

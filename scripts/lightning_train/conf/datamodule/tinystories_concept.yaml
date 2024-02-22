@@ -52,8 +52,11 @@ val_dataloader:
     datasets:
       - _target_: data._utils.cb_llm.FnsTokenConceptDataset
         dataset: 
-          _target_: data._core.tinystories.TinyStoriesDataset
-          data_path: '/home/ubuntu/Documents/infembed/files/tinystories/TinyStoriesV2-GPT4-valid.txt'
+          _target_: data._utils.common.LimitIterableDataset
+          dataset:
+            _target_: data._core.tinystories.TinyStoriesDataset
+            data_path: '/home/ubuntu/Documents/infembed/files/tinystories/TinyStoriesV2-GPT4-valid.txt'
+          num: 3
         fns:
         - _target_: data._core.tinystories.text_len_fn
           _args_:

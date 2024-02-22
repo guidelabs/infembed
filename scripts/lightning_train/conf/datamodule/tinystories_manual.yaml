@@ -22,6 +22,7 @@ val_dataloader:
     dataset:
       _target_: data._core.tinystories.TinyStoriesDataset
       data_path: '/home/ubuntu/Documents/infembed/files/tinystories/TinyStoriesV2-GPT4-valid.txt'
+    num: 50
   batch_size: 40
   collate_fn:
     _target_: data._utils.llm.DecoderLLMCollateFn

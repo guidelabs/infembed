@@ -21,6 +21,9 @@ class LimitIterableDataset(IterableDataset):
                 return
             yield batch
 
+    def __len__(self):
+        return self.num
+
 
 class GenericDataModule(L.LightningDataModule):
     def __init__(
@@ -109,6 +112,79 @@ class ZipIterableDataset(IterableDataset):
 
     def __iter__(self):
         return zip(*self.datasets)
+    
+    def __len__(self):
+        min = None
+        for dataset in self.datasets:
+            try:
+                _len = len(dataset)
+            except TypeError:
+                pass
+            else:
+                if min is None or _len < min:
+                    min = _len
+        return min
+    
+
+class MixDataset(Dataset):
+    def __init__(self, dataset1: Dataset, dataset2: Dataset):
+        # make total index, shuffle, and convert from total index to original
+        torch.manual_seed(42)
+        self.total_index = list(map(int, torch.randperm(len(dataset1) + len(dataset2))))
+        self.dataset1, self.dataset2 = dataset1, dataset2
+        print((torch.Tensor(self.total_index) < len(self.dataset1)).sum(), len(self.dataset1))
+        print((torch.Tensor(self.total_index) >= len(self.dataset1)).sum(), len(self.dataset2))
+    
+    def __getitem__(self, i):
+        _i = self.total_index[i]
+        if _i < len(self.dataset1):
+            return self.dataset1[_i]
+        else:
+            return self.dataset2[_i - len(self.dataset1)]
+        
+    def __len__(self):
+        return len(self.total_index)
+    
+
+class MixIterableDataset(IterableDataset, MixDataset):
+    def __iter__(self):
+        dataset1_iter = iter(self.dataset1)
+        dataset2_iter = iter(self.dataset2)
+        for i in self.total_index:
+            if i < len(self.dataset1):
+                yield next(dataset1_iter)
+            else:
+                yield next(dataset2_iter)
+
+
+class ReplicateDataset(Dataset):
+    def __init__(self, dataset: Dataset, replicas: int):
+        self.dataset, self.replicas = dataset, replicas
+
+    def __getitem__(self, i):
+        return self.dataset[i % len(self.dataset)]
+    
+    def __len__(self):
+        return self.replicas * len(self.dataset)
+    
+
+class ReplicateIterableDataset(IterableDataset):
+    def __init__(self, dataset: Dataset, replicas: int):
+        self.dataset, self.replicas = dataset, replicas
+
+    def __iter__(self):
+        for _ in range(self.replicas):
+            for x in self.dataset:
+                yield x
+
+
+class ZerosIterableDataset(IterableDataset):
+    def __init__(self, dim: int):
+        self.dim = dim
+
+    def __iter__(self):
+        while True:
+            yield torch.zeros(self.dim)
 
 
 def dict_batch_combiner(dicts):

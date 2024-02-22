@@ -1,0 +1,19 @@
+_target_: data._utils.common.GenericDataModule
+train_dataloader:
+  _target_: data._core.tinystories.tinystories_cb_dataloader
+  num: 1000
+  batch_size: 40
+  max_len: 512
+  data_path: '/home/ubuntu/Documents/infembed/files/tinystories/TinyStoriesV2-GPT4-train.txt'
+  concept_dataset:
+    _target_: data._utils.binary_multitask_llm.ReadTokenMultitaskDataset
+    path: '/home/ubuntu/Documents/infembed/examples/tinystories/hydra_outputs/lightning_predict/test_concept/predict_predictions.csv'
+val_dataloader:
+  _target_: data._core.tinystories.tinystories_cb_dataloader
+  num: 1000
+  batch_size: 40
+  max_len: 512
+  data_path: '/home/ubuntu/Documents/infembed/files/tinystories/TinyStoriesV2-GPT4-train.txt'
+  concept_dataset:
+    _target_: data._utils.binary_multitask_llm.ReadTokenMultitaskDataset
+    path: '/home/ubuntu/Documents/infembed/examples/tinystories/hydra_outputs/lightning_predict/test_concept/predict_predictions.csv'

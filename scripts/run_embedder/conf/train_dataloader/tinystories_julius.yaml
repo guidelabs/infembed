@@ -1,0 +1,12 @@
+_target_: torch.utils.data.DataLoader
+dataset:
+  _target_: data._utils.common.LimitIterableDataset
+  dataset: 
+    _target_: data._core.tinystories.DatasetJulius
+    path: '/home/ubuntu/Documents/infembed/files/tinystories/TinyStories-valid-with-concepts.csv'
+  num: 5000
+collate_fn:
+  _target_: data._core.tinystories.TinyStoriesCollateFn
+  duplicate: true
+  device: ${model.model.device}
+batch_size: 4

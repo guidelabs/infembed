@@ -215,7 +215,7 @@ class Decoder(nn.Module):
         return x
 
     def full_generate(self, x, mask):
-        return self.generator(self.forward(x, mask))
+        return {'prediction_logits': self.generator(self.forward(x, mask))}
 
     @property
     def max_len(self):
@@ -272,22 +272,37 @@ class DecoderLightningModule(GenericLightningModule):
     will be instantiated by hydra yaml
     """
 
-    _STEP_DO_NOT_LOG_KEYS = ["prediction_logits", "attention_mask", "labels", "input_ids", "mask"]
+    _STEP_DO_NOT_LOG_KEYS = [
+        "prediction_logits",
+        "attention_mask",
+        "labels",
+        "input_ids",
+        "mask",
+        "concept_labels",
+        "concept_logits",
+    ]
 
     def _step(self, batch, batch_idx):
         d = self.forward(batch)
         return {
-            "loss": self.loss_fn(d["prediction_logits"], batch["attention_mask"], batch["labels"]),
+            "loss": self.loss_fn(
+                d["prediction_logits"], batch["attention_mask"], batch["labels"]
+            ),
             **d,
             **batch,
         }
 
     def forward(self, batch):
         # output is the log probabilities for each position and token
-        prediction_logits = self.decoder.full_generate(batch["input_ids"], batch["mask"])
-        return {
-            "prediction_logits": prediction_logits,
-        }
+        return self.decoder.full_generate(
+            batch["input_ids"], batch["mask"]
+        )
+        # prediction_logits = self.decoder.full_generate(
+        #     batch["input_ids"], batch["mask"]
+        # )
+        # return {
+        #     "prediction_logits": prediction_logits,
+        # }
 
 
 class GreedyDecoder:
@@ -307,9 +322,10 @@ class GreedyDecoder:
                         mask=subsequent_mask(len(input_ids)).to(
                             device=input_ids.device
                         ),
-                    )
+                    )["prediction_logits"]
                 )
             )
+
             output = output[-1]  # get logits in last layer
             if temperature is None or temperature == 0:
                 top_id = torch.argmax(output)
@@ -423,7 +439,7 @@ class _DecoderLightningModule(L.LightningModule):
     # @property
     def max_len(self):
         return self.decoder.max_len
-    
+
 
 ### define how to compute loss given huggingface tokenizer output ###
 

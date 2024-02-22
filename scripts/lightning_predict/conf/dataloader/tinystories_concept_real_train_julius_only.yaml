@@ -1,0 +1,17 @@
+_target_: data._core.tinystories.tinystories_cb_dataloader_with_julius_mix
+orig_path: '/home/ubuntu/Documents/infembed/files/tinystories/TinyStoriesV2-GPT4-train.txt'
+julius_path: '/home/ubuntu/Documents/infembed/files/tinystories/TinyStories-valid-with-concepts.csv'
+max_len: 512
+batch_size: 40
+# julius_start_num: 0
+# #julius_end_num: 64
+# julius_end_num: 73636
+julius_start_num: 73636
+#julius_end_num: 64
+julius_end_num: null
+orig_len: 0
+#  orig_len: 6400
+num_workers: 0
+# num_workers: 20
+# julius_replicas: 3
+num_concepts: 4

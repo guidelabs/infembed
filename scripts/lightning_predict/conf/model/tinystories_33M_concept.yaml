@@ -1,0 +1,30 @@
+_target_: models._utils.common.load_model
+model:
+  _target_: models._core.binary_multitask_decoder_llm.BinaryMultitaskDecoderLightningModule
+  decoder:
+    _target_: models._core.binary_multitask_decoder_llm.constructor
+    model_dim: 768
+    key_dim: 48
+    value_dim: 48
+    num_heads: 16
+    num_layers: 4
+    dropout: 0.0
+    hidden_dim: 3072
+    num_tokens: 10000
+    max_len: 2048
+    num_concepts: 4
+    concept_generator_hidden_dims:
+      - 10
+eval: true
+checkpoints_load_func: 
+  _target_: models._utils.common.default_checkpoints_load_func
+  key: state_dict
+  # _target_: models._utils.common.lightning_checkpoints_load_func
+  # active_module_names:
+  # - decoder.generator
+  _partial_: true
+# checkpoint: "/home/ubuntu/Documents/infembed/examples/tinystories_cb/hydra_outputs/lightning_train/concept_impute/lightning_logs/xs0p2db6/checkpoints/epoch=0-step=3600.ckpt"
+checkpoint: "/home/ubuntu/Documents/infembed/examples/tinystories_cb/hydra_outputs/lightning_train/concept_example/lightning_logs/d9j5e2aa/checkpoints/epoch=4-step=7800.ckpt"
+# checkpoint: null
+# checkpoint: /home/ubuntu/Documents/infembed/scripts/misc/lightning_logs/0hiuc53z/checkpoints/epoch=0-step=21600.ckpt
+# checkpoint: '/home/ubuntu/Documents/infembed/scripts/misc/lightning_logs/0hiuc53z/checkpoints/epoch=0-step=4500.ckpt'

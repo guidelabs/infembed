@@ -1,0 +1,43 @@
+_target_: data._utils.common.GenericDataModule
+train_dataloader:
+  _target_: data._core.tinystories.tinystories_cb_dataloader
+  batch_size: 40
+  max_len: 512
+  data_path: '/home/ubuntu/Documents/infembed/files/tinystories/TinyStoriesV2-GPT4-train.txt'
+  concept_dataset:
+    _target_: data._utils.cb_llm.FnsTokenConceptDataset
+    dataset: 
+      _target_: data._core.tinystories.TinyStoriesDataset
+      data_path: '/home/ubuntu/Documents/infembed/files/tinystories/TinyStoriesV2-GPT4-train.txt'
+    fns:
+    - _target_: data._core.tinystories.text_len_fn
+      _args_:
+        - 50
+      _partial_: true
+    - _target_: data._core.tinystories.has_str_fn
+      _args_:
+        - 'once'
+      _partial_: true
+    tokenizer: 
+      _target_: data._core.tinystories.tinystories_tokenizer
+val_dataloader:
+  _target_: data._core.tinystories.tinystories_cb_dataloader
+  batch_size: 40
+  max_len: 512
+  data_path: '/home/ubuntu/Documents/infembed/files/tinystories/TinyStoriesV2-GPT4-valid.txt'
+  concept_dataset:
+    _target_: data._utils.cb_llm.FnsTokenConceptDataset
+    dataset: 
+      _target_: data._core.tinystories.TinyStoriesDataset
+      data_path: '/home/ubuntu/Documents/infembed/files/tinystories/TinyStoriesV2-GPT4-valid.txt'
+    fns:
+    - _target_: data._core.tinystories.text_len_fn
+      _args_:
+        - 50
+      _partial_: true
+    - _target_: data._core.tinystories.has_str_fn
+      _args_:
+        - 'once'
+      _partial_: true
+    tokenizer: 
+      _target_: data._core.tinystories.tinystories_tokenizer

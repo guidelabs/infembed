@@ -1,7 +1,8 @@
 - _target_: models._utils.callbacks.TorchMetricsCallback
   metrics:
-    perplexity: 
-      _target_: torchmetrics.text.perplexity.Perplexity
+    # perplexity: 
+    #   _target_: torchmetrics.text.perplexity.Perplexity
+  - _target_: torchmetrics.text.perplexity.Perplexity
   get_preds: 
     _target_: models._core.decoder_llm.LLM_get_preds
     _partial_: true
@@ -13,3 +14,13 @@
   - "on_validation_start"
   - "on_validation_epoch_end"
   - "on_validation_batch_end"
+- _target_: lightning.pytorch.callbacks.EarlyStopping
+  patience: 3
+  monitor: validation_loss
+  mode: min
+  verbose: true
+- _target_: lightning.pytorch.callbacks.ModelCheckpoint
+#  dirpath: '/home/fultonwang/Documents/code/experimental/results/vae/results/test/checkpoints'
+#  monitor: validation_loss
+  every_n_train_steps: 3500 #2000
+  save_top_k: -1

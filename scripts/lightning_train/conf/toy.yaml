@@ -1,0 +1,15 @@
+defaults:
+  - callbacks: standard
+  - datamodule: toy
+  - model: toy
+  - trainer_kwargs: standard
+#  - _self_
+hydra:
+  run:
+#    dir: outputs/fast_kfac
+    dir: /home/ubuntu/Documents/infembed/examples/toy/hydra_outputs/lightning_train/test
+#    dir: outputs/spotcheck/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+#    dir: outputs/fast_kfac
+    dir: /home/ubuntu/Documents/infembed/examples/toy/hydra_outputs/lightning_train/test
+#    dir: outputs/spotcheck/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}

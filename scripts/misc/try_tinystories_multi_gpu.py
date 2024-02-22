@@ -9,13 +9,39 @@ import lightning as L
 import torch
 import yaml
 import pytorch_lightning
+import os
 
 
 def run():
 
-    datamodule_yaml = "/home/ubuntu/Documents/infembed/scripts/lightning_train/conf/datamodule/tinystories_manual.yaml"
-    model_yaml = "/home/ubuntu/Documents/infembed/scripts/lightning_train/conf/model/tinystories_33M.yaml"
-    callbacks_yaml = "/home/ubuntu/Documents/infembed/scripts/lightning_train/conf/callbacks/standard.yaml"
+    if False:
+        datamodule_yaml = "/home/ubuntu/Documents/infembed/scripts/lightning_train/conf/datamodule/tinystories_manual.yaml"
+        model_yaml = "/home/ubuntu/Documents/infembed/scripts/lightning_train/conf/model/tinystories_33M.yaml"
+        callbacks_yaml = "/home/ubuntu/Documents/infembed/scripts/lightning_train/conf/callbacks/standard.yaml"
+        trainer_kwargs = {
+            'accumulate_grad_batches': 8,
+            'logger': pytorch_lightning.loggers.WandbLogger(),
+        }
+    if True:
+        datamodule_yaml = "/home/ubuntu/Documents/infembed/scripts/lightning_train/conf/datamodule/tinystories_concept_real.yaml"
+        model_yaml = "/home/ubuntu/Documents/infembed/scripts/lightning_train/conf/model/tinystories_33M_concept.yaml"
+        callbacks_yaml = "/home/ubuntu/Documents/infembed/scripts/lightning_train/conf/callbacks/standard.yaml"
+        trainer_kwargs = {
+            'accumulate_grad_batches': 8,
+            'logger': pytorch_lightning.loggers.WandbLogger(),
+            'devices': [0],#,1,2,3],
+            'strategy': 'ddp',
+        }
+    
+
+    # working_dir = './lightning_train/test_concept'
+    # try:
+    #     os.makedirs(working_dir)
+    #     import pdb
+    #     pdb.set_trace()
+    # except:
+    #     pass
+    # os.chdir(working_dir)
 
     with open(datamodule_yaml, "r") as f:
         datamodule = instantiate(yaml.safe_load(f))
@@ -28,9 +54,7 @@ def run():
 
     trainer = L.Trainer(
         callbacks=callbacks,
-        accumulate_grad_batches=8,
-        logger=pytorch_lightning.loggers.WandbLogger(),
-        # accelerator="cpu",
+        **trainer_kwargs,
     )
 
     trainer.fit(model=model, datamodule=datamodule)

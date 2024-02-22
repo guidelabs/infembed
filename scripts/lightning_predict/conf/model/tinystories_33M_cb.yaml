@@ -18,32 +18,14 @@ model:
     concept_embedder_hidden_dims: null
     concept_generator_hidden_dims: null
     generator_hidden_dims: null
-  loss_fn:
-    _target_: models._utils.cb_llm.CBDecoderLoss
-    token_loss:
-      _target_: models._utils.llm.LLMCrossEntropyLoss
-    concept_loss:
-      _target_: models._utils.binary_multitask_llm.LLMBinaryMultitaskLoss
-      equal_batch_contribution: true
-    tradeoff: 1.0
-  configure_optimizers:
-    _target_: models._utils.common.GenericConfigureOptimizers
-    parameters_getter:
-      _partial_: true
-      _target_: models._utils.common.get_all_parameters
-    optimizer_constructor:
-      _partial_: true
-      _target_: torch.optim.AdamW
-      lr: 0.0005
-      weight_decay: 0.1
-      betas:
-      - 0.9
-      - 0.95
-eval: false
+eval: true
 checkpoints_load_func: 
   _target_: models._utils.common.default_checkpoints_load_func
   key: state_dict
   # _target_: models._utils.common.lightning_checkpoints_load_func
   _partial_: true
-checkpoint: null
+# checkpoint: '/home/ubuntu/Documents/infembed/examples/tinystories_cb/hydra_outputs/lightning_train/cb_simplified_read_julius_only_accum_2/lightning_logs/m0cfve7c/checkpoints/epoch=17-step=48000.ckpt'
+# checkpoint: '/home/ubuntu/Documents/infembed/examples/tinystories_cb/hydra_outputs/lightning_train/cb_simplified_read_julius_only_accum_16/lightning_logs/p623gccj/checkpoints/epoch=8-step=8000.ckpt'
+checkpoint: '/home/ubuntu/Documents/infembed/examples/tinystories_cb/hydra_outputs/lightning_train/cb_simplified_read_julius_only_accum_2/lightning_logs/ryp0s60u/checkpoints/epoch=1-step=1842.ckpt'
+# checkpoint: null
 # checkpoint: '/home/ubuntu/Documents/infembed/scripts/misc/lightning_logs/0hiuc53z/checkpoints/epoch=0-step=4500.ckpt'

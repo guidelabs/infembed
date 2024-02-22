@@ -1,6 +1,6 @@
 _target_: models._utils.common.load_model
 model:
-  _target_: models._core.cb_decoder_llm.CBDecoderLightningModule
+  _target_: models._core.decoder_llm.DecoderLightningModule
   decoder:
     _target_: models._core.cb_decoder_llm.constructor
     model_dim: 768
@@ -18,28 +18,7 @@ model:
     concept_embedder_hidden_dims: null
     concept_generator_hidden_dims: null
     generator_hidden_dims: null
-  loss_fn:
-    _target_: models._utils.cb_llm.CBDecoderLoss
-    token_loss:
-      _target_: models._utils.llm.LLMCrossEntropyLoss
-    concept_loss:
-      _target_: models._utils.binary_multitask_llm.LLMBinaryMultitaskLoss
-      equal_batch_contribution: true
-    tradeoff: 1.0
-  configure_optimizers:
-    _target_: models._utils.common.GenericConfigureOptimizers
-    parameters_getter:
-      _partial_: true
-      _target_: models._utils.common.get_all_parameters
-    optimizer_constructor:
-      _partial_: true
-      _target_: torch.optim.AdamW
-      lr: 0.0005
-      weight_decay: 0.1
-      betas:
-      - 0.9
-      - 0.95
-eval: false
+eval: true
 checkpoints_load_func: 
   _target_: models._utils.common.default_checkpoints_load_func
   key: state_dict

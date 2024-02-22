@@ -1,7 +1,7 @@
 defaults:
   - callbacks: tinystories
   - dataloader: tinystories
-  - model: tinystories_33M
+  - model: tinystories_33M_fake_cb
   - trainer_kwargs: standard
   - _self_
 hydra:

@@ -20,7 +20,7 @@ class TokenizerCollateFn:
         self.duplicate, self.add_labels, self.device = duplicate, add_labels, device
 
     def __call__(self, texts):
-        output = self.tokenizer(texts, **self.tokenizer_kwargs).to(self.device)
+        output = self.tokenizer(list(texts), **self.tokenizer_kwargs).to(self.device)
         if self.add_labels:
             output["labels"] = output["input_ids"]
         return output if not self.duplicate else (output, output)
@@ -43,7 +43,7 @@ class DecoderLLMCollateFn:
 
     def __call__(self, texts):
         # this is the unshifted text
-        d = self.tokenizer(texts, return_tensors="pt", padding=True, truncation=True)
+        d = self.tokenizer(list(texts), return_tensors="pt", padding=True, truncation=True)
         # truncate if needed
         if d["input_ids"].shape[1] > self.max_len:
             end_pos = self.max_len

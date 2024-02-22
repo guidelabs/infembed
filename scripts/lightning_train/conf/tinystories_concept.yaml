@@ -7,10 +7,10 @@ defaults:
 hydra:
   run:
 #    dir: outputs/fast_kfac
-    dir: /home/ubuntu/Documents/infembed/examples/tinystories_cb/hydra_outputs/lightning_train/test_concept
+    dir: /home/ubuntu/Documents/infembed/examples/tinystories_cb/hydra_outputs/lightning_train/concept_example
 #    dir: outputs/spotcheck/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
   sweep:
 #    dir: outputs/fast_kfac
-    dir: /home/ubuntu/Documents/infembed/examples/tinystories_cb/hydra_outputs/lightning_train/test_concept
+    dir: /home/ubuntu/Documents/infembed/examples/tinystories_cb/hydra_outputs/lightning_train/concept_example
 #    dir: outputs/spotcheck/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
 #    subdir: lr_${model.configure_optimizers.optimizer_constructor.lr}

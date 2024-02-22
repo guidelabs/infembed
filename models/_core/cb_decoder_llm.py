@@ -179,6 +179,7 @@ class CBDecoderLightningModule(GenericLightningModule):
         "mask",
         "concept_logits",
         "concept_labels",
+        "example_labels",
     ]
 
     def _step(self, batch, batch_idx):

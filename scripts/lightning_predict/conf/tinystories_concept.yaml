@@ -1,0 +1,15 @@
+defaults:
+  - callbacks: tinystories_concept
+  - dataloader: tinystories_concept_real_train_julius_only
+  - model: tinystories_33M_concept
+  - trainer_kwargs: standard
+  - _self_
+hydra:
+  run:
+#    dir: outputs/fast_kfac
+    # dir: /Users/fultonwang/Documents/infembed/examples/shakespeare/hydra_outputs/lightning_predict/test
+    dir: /home/ubuntu/Documents/infembed/examples/tinystories/hydra_outputs/lightning_predict/example_loss_valid_julius_only_predictions_v2
+#    dir: outputs/spotcheck/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: /home/ubuntu/Documents/infembed/examples/tinystories/hydra_outputs/lightning_predict/example_loss_valid_julius_only_predictions_v2
+    # dir: /Users/fultonwang/Documents/infembed/examples/shakespeare/hydra_outputs/lightning_predict/test

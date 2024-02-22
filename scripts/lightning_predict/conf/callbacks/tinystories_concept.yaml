@@ -1,0 +1,3 @@
+- _target_: models._utils.binary_multitask_llm.LLMBinaryMultitaskWritePredictions
+  hook_strings:
+  - 'on_predict_batch_end'

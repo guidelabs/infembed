@@ -1,8 +1,8 @@
 _target_: models._utils.common.load_model
 model:
-  _target_: models._core.binary_multitask_decoder_llm.BinaryMultitaskDecoderLightningModule
+  _target_: models._core.decoder_llm.DecoderLightningModule
   decoder:
-    _target_: models._core.binary_multitask_decoder_llm.constructor
+    _target_: models._core.cb_decoder_llm.constructor
     model_dim: 768
     key_dim: 48
     value_dim: 48
@@ -14,20 +14,17 @@ model:
     max_len: 2048
     # num_concepts: 2
     num_concepts: 4
-    concept_generator_hidden_dims:
-      - 10
-  # loss_fn:
-  #   _target_: models._utils.binary_multitask_llm.LLMMILImputeLoss
-  #   # _target_: models._utils.binary_multitask_llm.LLMMilMaxLoss
-  #   llm_loss:
-  #     _target_: models._utils.binary_multitask_llm.LLMBinaryMultitaskLoss
-  #     equal_batch_contribution: true
-  #     # equal_batch_contribution: false
+    concept_embedding_dim: 32
+    concept_embedder_hidden_dims: null
+    concept_generator_hidden_dims: null
+    generator_hidden_dims: null
   loss_fn:
-    _target_: models._utils.binary_multitask_llm.LLMMILExampleLoss
-    loss:
-      _target_: torch.nn.BCEWithLogitsLoss
-      reduction: 'mean'
+    # _target_: models._core.decoder_llm.LabelSmoothingLoss
+    # criterion:
+    #   _target_: torch.nn.KLDivLoss
+    #   reduction: 'sum'
+    # smoothing: 0.1
+    _target_: models._utils.llm.LLMCrossEntropyLoss
   configure_optimizers:
     _target_: models._utils.common.GenericConfigureOptimizers
     parameters_getter:
@@ -41,14 +38,11 @@ model:
       betas:
       - 0.9
       - 0.95
-eval: false
+eval: true
 checkpoints_load_func: 
   _target_: models._utils.common.default_checkpoints_load_func
   key: state_dict
   # _target_: models._utils.common.lightning_checkpoints_load_func
-  active_module_names:
-  - decoder.generator
   _partial_: true
-# checkpoint: null
-checkpoint: /home/ubuntu/Documents/infembed/scripts/misc/lightning_logs/0hiuc53z/checkpoints/epoch=0-step=21600.ckpt
+checkpoint: null
 # checkpoint: '/home/ubuntu/Documents/infembed/scripts/misc/lightning_logs/0hiuc53z/checkpoints/epoch=0-step=4500.ckpt'

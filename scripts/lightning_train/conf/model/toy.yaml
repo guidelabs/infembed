@@ -1,0 +1,15 @@
+_target_: models._utils.common.GenericLightningModule
+decoder:
+  _target_: models._core.toy.ToyModel
+loss_fn:
+  _target_: torch.nn.CrossEntropyLoss
+  reduction: sum
+configure_optimizers:
+  _target_: models._utils.common.GenericConfigureOptimizers
+  parameters_getter:
+    _partial_: true
+    _target_: models._utils.common.get_all_parameters
+  optimizer_constructor:
+    _partial_: true
+    _target_: torch.optim.Adam
+    lr: 1e-3

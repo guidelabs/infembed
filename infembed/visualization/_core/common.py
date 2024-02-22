@@ -115,6 +115,15 @@ class DisplayPredictionAndLabels(SingleClusterDisplayer):
         print(f"label: {dict(label_counts)}")
 
 
+class DisplayJointCounts(SingleClusterDisplayer):
+    def __init__(self, cols):
+        self.cols = cols
+
+    def __call__(self, cluster, data):
+        print("joint counts:")
+        print(data[cluster].metadata.value_counts())
+
+
 class DisplayCounts(SingleClusterDisplayer):
     def __init__(self, cols: List[str], ignore_threshold: Optional[int] = None):
         self.cols = cols
@@ -131,6 +140,14 @@ class DisplayCounts(SingleClusterDisplayer):
             if self.ignore_threshold is not None:
                 counts = counts[counts > self.ignore_threshold]
             print(f"{col} counts: {dict(counts)}")
+
+
+class LambdaDisplay(SingleClusterDisplayer):
+    def __init__(self, name: str, f: Callable):
+        self.name, self.f = name, f
+
+    def __call__(self, cluster, data):
+        print(self.name, self.f(data[cluster]))
 
 
 class SingleExampleDisplayer(ABC):
@@ -183,7 +200,7 @@ class DisplaySingleExamples(SingleClusterDisplayer):
         for i in cluster:
             if self.limit is not None and num >= self.limit:
                 break
-            if self.condition(i, data):
+            if self.condition is None or self.condition(i, data):
                 header = f"""
 ### example {i} ###
 """
