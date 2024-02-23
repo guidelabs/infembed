@@ -58,36 +58,58 @@ class ConstantStrategy(Strategy):
     def __init__(self, concept_to_prob: List[float]):
         self.concept_to_prob = concept_to_prob
 
-    def __call__(self, model, input_ids):
-        return torch.stack(
-            [torch.ones(len(input_ids)) * prob for prob in self.concept_to_prob],
-            dim=0,
-        ).T
+    def __call__(self, model, input_ids, initial_pos=None):
+        if initial_pos is None:
+            return torch.stack(
+                [torch.ones(len(input_ids)) * prob for prob in self.concept_to_prob],
+                dim=0,
+            ).T
+        else:
+            strategy = torch.ones(len(input_ids), len(self.concept_to_prob))
+            strategy[initial_pos] = torch.Tensor(self.concept_to_prob)
+            return strategy
 
 
 class GreedyCBDecoder:
     def __init__(self, max_len, strategy):
         self.max_len, self.strategy = max_len, strategy
 
-    def __call__(self, model, eos_token, input_ids, temperature=None):
+    def next_logits(self, model, input_ids, initial_pos):
+        output = next(
+            iter(
+                model.decoder.full_generate(
+                    x=input_ids.unsqueeze(0),
+                    mask=subsequent_mask(len(input_ids)).to(
+                        device=input_ids.device
+                    ),
+                    # concept_probs=self.strategy(model, input_ids, initial_pos).unsqueeze(0),
+                )["prediction_logits"]
+            )
+        )
+        return output[-1]
+
+    def __call__(self, model, eos_token, input_ids, initial_pos, temperature=None):
         """
         `input_ids` is 1D, representing a single example.
         """
         output_ids = []
         for _ in range(self.max_len - len(input_ids)):
-            output = next(
-                iter(
-                    model.decoder.full_generate(
-                        x=input_ids.unsqueeze(0),
-                        mask=subsequent_mask(len(input_ids)).to(
-                            device=input_ids.device
-                        ),
-                        concept_probs=self.strategy(model, input_ids).unsqueeze(0),
-                    )["prediction_logits"]
-                )
-            )
-
-            output = output[-1]  # get logits in last layer
+            # output = next(
+            #     iter(
+            #         model.decoder.full_generate(
+            #             x=input_ids.unsqueeze(0),
+            #             mask=subsequent_mask(len(input_ids)).to(
+            #                 device=input_ids.device
+            #             ),
+            #             concept_probs=self.strategy(model, input_ids).unsqueeze(0),
+            #         )["prediction_logits"]
+            #     )
+            # )
+            # import pdb
+            # pdb.set_trace()
+            # output = output[-1]  # get logits in last layer
+            output = self.next_logits(model, input_ids, initial_pos)
+            #print(output.argsort(descending=True)[:10])
             if temperature is None or temperature == 0:
                 top_id = torch.argmax(output)
             else:
@@ -95,6 +117,7 @@ class GreedyCBDecoder:
                 top_id = Categorical(logits=output / temperature).sample()
             if top_id == eos_token:
                 break
+            #print('p', output[top_id])
             input_ids = torch.cat([input_ids, top_id.unsqueeze(0)])
             output_ids.append(top_id)
         return torch.Tensor(output_ids).long()
