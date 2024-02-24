@@ -1,3 +1,4 @@
+from data._utils.llm import subsequent_mask
 from models._utils.callbacks import GenericCallback
 from models._utils.common import MLP, clones
 import torch.nn as nn
@@ -85,6 +86,8 @@ class GreedyDecoder:
         """
         `input_ids` is 1D, representing a single example.
         """
+        import pdb
+        pdb.set_trace()
         output_ids = []
         for _ in range(self.max_len - len(input_ids)):
             output = next(

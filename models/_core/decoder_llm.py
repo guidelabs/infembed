@@ -305,44 +305,6 @@ class DecoderLightningModule(GenericLightningModule):
         # }
 
 
-class GreedyDecoder:
-    def __init__(self, max_len):
-        self.max_len = max_len
-
-    def __call__(self, model, eos_token, input_ids, temperature=None):
-        """
-        `input_ids` is 1D, representing a single example.
-        """
-        output_ids = []
-        for _ in range(self.max_len - len(input_ids)):
-            output = next(
-                iter(
-                    model.decoder.full_generate(
-                        x=input_ids.unsqueeze(0),
-                        mask=subsequent_mask(len(input_ids)).to(
-                            device=input_ids.device
-                        ),
-                    )["prediction_logits"]
-                )
-            )
-
-            output = output[-1]  # get logits in last layer
-            if temperature is None or temperature == 0:
-                top_id = torch.argmax(output)
-            else:
-                output = output / temperature
-                top_id = Categorical(logits=output / temperature).sample()
-            if top_id == eos_token:
-                break
-            input_ids = torch.cat([input_ids, top_id.unsqueeze(0)])
-            output_ids.append(top_id)
-        return torch.Tensor(output_ids).long()
-
-
-def LLM_get_preds(outputs):
-    return outputs["prediction_logits"].detach().cpu()
-
-
 ### DEPRECATED ###
 
 

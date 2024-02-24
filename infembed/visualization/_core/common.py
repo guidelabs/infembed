@@ -204,7 +204,7 @@ class DisplaySingleExamples(SingleClusterDisplayer):
                 header = f"""
 ### example {i} ###
 """
-                print(header)
+                # print(header)
                 for displayer in self.single_example_displayers:
                     displayer(i, data)
                 num += 1

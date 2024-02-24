@@ -144,7 +144,7 @@ def julius_raw_data(path, drop_weird=True):
 class ConceptDatasetJulius(MultitaskDataset):
     def __init__(self, path, drop_weird=True):
         self.df = julius_raw_data(path, drop_weird)
-        print('ConceptDatasetJulius', self.df.shape)
+        # print('ConceptDatasetJulius', self.df.shape)
 
     def __getitem__(self, i):
         return torch.Tensor(self.df.iloc[i, 2:].astype(int).to_numpy()).long()
@@ -160,7 +160,7 @@ class ConceptDatasetJulius(MultitaskDataset):
 class DatasetJulius(Dataset):
     def __init__(self, path, drop_weird=True):
         self.df = julius_raw_data(path, drop_weird)
-        print('DatasetJulius', self.df.shape)
+        # print('DatasetJulius', self.df.shape)
 
     def __getitem__(self, i):
         return self.df.iloc[i]["concept_poem"]
