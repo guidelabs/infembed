@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch
 from torch.distributions import Categorical
 
+
 class CBDecoderLoss(nn.Module):
     def __init__(self, token_loss, concept_loss, tradeoff):
         super().__init__()
@@ -22,7 +23,7 @@ class CBDecoderLoss(nn.Module):
             self.tradeoff
             * self.concept_loss(concept_logits, attention_mask, concept_labels)
         )
-    
+
 
 def last_token_cb_llm_get_preds_and_target(outputs, batch):
     """
@@ -31,7 +32,9 @@ def last_token_cb_llm_get_preds_and_target(outputs, batch):
     preds = {
         f"task_{t}": task_preds.detach().cpu()
         for (t, task_preds) in enumerate(
-            _last_token_multitask_get_preds(outputs['concept_logits'], batch["attention_mask"]).T
+            _last_token_multitask_get_preds(
+                outputs["concept_logits"], batch["attention_mask"]
+            ).T
         )
     }
 
@@ -46,53 +49,63 @@ class Strategy:
     given a model and 1D `input_ids` representing a sequence, returns the imputed
     `concept_probs` for the entire `input_ids`.
     """
+
     def __call__(self, model, input_ids) -> torch.Tensor:
         raise NotImplementedError
-    
+
 
 class ConstantStrategy(Strategy):
     """
     returns a constant for tasks specified by a list.  since input is 1D, output
     represents 1D input, i.e. is of shape sequence length X number concepts
     """
+
     def __init__(self, concept_to_prob: List[float]):
         self.concept_to_prob = concept_to_prob
 
-    def __call__(self, model, input_ids, initial_pos=None):
-        if initial_pos is None:
-            return torch.stack(
-                [torch.ones(len(input_ids)) * prob for prob in self.concept_to_prob],
-                dim=0,
-            ).T
-        else:
-            strategy = torch.ones(len(input_ids), len(self.concept_to_prob))
-            strategy[initial_pos] = torch.Tensor(self.concept_to_prob)
-            return strategy
+    def __call__(self, model, input_ids):
+        # if initial_pos is None:
+        return torch.stack(
+            [torch.ones(len(input_ids)) * prob for prob in self.concept_to_prob],
+            dim=0,
+        ).T
+        # else:
+        #     strategy = torch.ones(len(input_ids), len(self.concept_to_prob))
+        #     strategy[initial_pos] = torch.Tensor(self.concept_to_prob)
+        #     return strategy
 
 
 class GreedyCBDecoder:
-    def __init__(self, max_len, strategy):
+    def __init__(self, max_len, strategy=None):
         self.max_len, self.strategy = max_len, strategy
 
-    def next_logits(self, model, input_ids, initial_pos):
+    def next_logits(self, model, input_ids):
         output = next(
             iter(
                 model.decoder.full_generate(
                     x=input_ids.unsqueeze(0),
-                    mask=subsequent_mask(len(input_ids)).to(
-                        device=input_ids.device
-                    ),
-                    # concept_probs=self.strategy(model, input_ids, initial_pos).unsqueeze(0),
+                    mask=subsequent_mask(len(input_ids)).to(device=input_ids.device),
+                    concept_probs=self.strategy(model, input_ids).unsqueeze(0)
+                    if self.strategy is not None
+                    else None,
                 )["prediction_logits"]
             )
         )
         return output[-1]
 
-    def __call__(self, model, eos_token, input_ids, initial_pos, temperature=None):
+    def __call__(
+        self,
+        model,
+        eos_token,
+        input_ids,
+        temperature=None,
+        return_probs=False,
+    ):
         """
         `input_ids` is 1D, representing a single example.
         """
         output_ids = []
+        outputs = []
         for _ in range(self.max_len - len(input_ids)):
             # output = next(
             #     iter(
@@ -108,8 +121,8 @@ class GreedyCBDecoder:
             # import pdb
             # pdb.set_trace()
             # output = output[-1]  # get logits in last layer
-            output = self.next_logits(model, input_ids, initial_pos)
-            #print(output.argsort(descending=True)[:10])
+            output = self.next_logits(model, input_ids)
+            # print(output.argsort(descending=True)[:10])
             if temperature is None or temperature == 0:
                 top_id = torch.argmax(output)
             else:
@@ -117,10 +130,14 @@ class GreedyCBDecoder:
                 top_id = Categorical(logits=output / temperature).sample()
             if top_id == eos_token:
                 break
-            #print('p', output[top_id])
+            # print('p', output[top_id])
             input_ids = torch.cat([input_ids, top_id.unsqueeze(0)])
             output_ids.append(top_id)
-        return torch.Tensor(output_ids).long()
+            outputs.append(output)
+        if return_probs:
+            return torch.Tensor(output_ids).long(), torch.stack(outputs, dim=0)
+        else:
+            return torch.Tensor(output_ids).long()
 
 
 def LLM_get_preds(outputs):

@@ -157,6 +157,7 @@ class CBDecoder(nn.Module):
         if concept_probs is None:
             concept_probs = _concept_probs
         else:
+            # assert False
             use_provided = (concept_probs != -1).to(dtype=_concept_probs.dtype)
             concept_probs = (_concept_probs * (1. - use_provided)) + (concept_probs * use_provided)
 
