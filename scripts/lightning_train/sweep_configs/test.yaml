@@ -1,0 +1,17 @@
+program: lightning_train_wandb.py
+name: test
+method: bayes
+metric: 
+  goal: minimize
+  name: validation_loss_epoch
+parameters:
+  # model-model-configure_optimizers-optimizer_constructor-lr: 
+  model-configure_optimizers-optimizer_constructor-lr:
+    values: [5e-4, 1e-4, 5e-3]
+command:
+  - ${env}
+  - python
+  - ${program}
+  - datamodule.train_dataloader.batch_size=34
+  - "--config-name"
+  - toy

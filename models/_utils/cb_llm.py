@@ -6,6 +6,12 @@ import torch
 from torch.distributions import Categorical
 
 
+"""
+this contains functions needed for the cb-llm scenario, independent of any particular
+model.
+"""
+
+
 class CBDecoderLoss(nn.Module):
     def __init__(self, token_loss, concept_loss, tradeoff):
         super().__init__()
@@ -85,9 +91,11 @@ class GreedyCBDecoder:
                 model.decoder.full_generate(
                     x=input_ids.unsqueeze(0),
                     mask=subsequent_mask(len(input_ids)).to(device=input_ids.device),
-                    concept_probs=self.strategy(model, input_ids).unsqueeze(0)
-                    if self.strategy is not None
-                    else None,
+                    concept_probs=(
+                        self.strategy(model, input_ids).unsqueeze(0)
+                        if self.strategy is not None
+                        else None
+                    ),
                 )["prediction_logits"]
             )
         )
@@ -103,6 +111,7 @@ class GreedyCBDecoder:
     ):
         """
         `input_ids` is 1D, representing a single example.
+        TODO: consider returning a dictionary
         """
         output_ids = []
         outputs = []

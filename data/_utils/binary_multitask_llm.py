@@ -6,7 +6,7 @@ from torch.utils.data import default_collate
 
 
 """
-data relevant for binary multitask scenario, which includes CB scenario
+helpers for data relevant for binary multitask scenario
 """
 
 
@@ -20,8 +20,7 @@ class MultitaskDataset(Dataset):
 
 class MultiTaskDatasetCollateFn(Dataset):
     """
-    just applies default collate function, then put into dictionary with one item whose
-    key is 'example_labels'
+    returns batches with per-example labels in the key 'example_labels'
     """
 
     def __call__(self, examples: List[Tensor]):
@@ -41,6 +40,9 @@ class TokenMultitaskDataset(Dataset):
 
 
 class ReadTokenMultitaskDataset(IterableDataset, TokenMultitaskDataset):
+    """
+    reads the output of `LLMBinaryMultitaskWritePredictions` to given a dataset
+    """
     def __init__(self, path):
         self.path = path
 
@@ -82,13 +84,10 @@ class ReadTokenMultitaskDataset(IterableDataset, TokenMultitaskDataset):
 
 class TokenMultitaskDatasetCollateFn:
     """
-    this collate function is generic to the token multitask case, but below describes
-    its application to concept loss.
+    returns batch with the key 'labels' (per-token binary multi-task labels) and
+    corresponding 'attention_mask'.
 
-    takes in list of examples from a `FnsTokenConceptDataset` giving
-    `concept_labels` and `attention_mask`.  this is used by `ConceptLoss`, and also
-    to evaluate token-level concept predictions, and train a token-level concept
-    classifier.
+    if used by cb-llm, need to rename 'labels' to 'concept_labels'
     """
 
     def __init__(self, max_len):

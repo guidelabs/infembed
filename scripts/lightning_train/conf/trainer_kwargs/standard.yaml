@@ -1,2 +1,10 @@
 logger:
   _target_: pytorch_lightning.loggers.WandbLogger
+  log_model: true
+  # save_dir: './my_folder'
+  # save_dir: '/home/ubuntu/Documents/infembed/scripts/lightning_train'
+val_check_interval: 1
+max_steps: 5
+devices:
+- 0
+- 1

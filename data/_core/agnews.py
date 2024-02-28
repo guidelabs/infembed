@@ -3,10 +3,14 @@ from transformers import AutoTokenizer, BertForSequenceClassification, DataColla
 import functools
 from torch.utils.data import DataLoader
 
+
+"""
+this contains functions needed for the agnews dataset
+"""
+
  
 def agnews_dataset(split: str = "train"):
     return load_dataset("ag_news")[split]
-    pass
 
 
 def agnews_tokenizer():

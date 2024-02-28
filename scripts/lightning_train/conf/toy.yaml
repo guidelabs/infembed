@@ -3,13 +3,14 @@ defaults:
   - datamodule: toy
   - model: toy
   - trainer_kwargs: standard
+  - dataloader@datamodule.train_dataloader: toy
+  # - dataloader@new: toy
 #  - _self_
+# datamodule2:
+#   datamodule@_here_: toy
+  # - datamodule@datamodule2/tt: toy
 hydra:
   run:
 #    dir: outputs/fast_kfac
-    dir: /home/ubuntu/Documents/infembed/examples/toy/hydra_outputs/lightning_train/test
+    dir: "../examples/toy/hydra_outputs/lightning_train/test3"
 #    dir: outputs/spotcheck/outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
-  sweep:
-#    dir: outputs/fast_kfac
-    dir: /home/ubuntu/Documents/infembed/examples/toy/hydra_outputs/lightning_train/test
-#    dir: outputs/spotcheck/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}

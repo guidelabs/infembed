@@ -1,0 +1,9 @@
+defaults:
+  - callbacks: standard
+  - trainer_kwargs: standard
+  - _self_
+hydra:
+  run:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}

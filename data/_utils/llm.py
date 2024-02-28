@@ -1,6 +1,11 @@
 import torch
 
 
+"""
+helpers for data relevant for the llm scenario
+"""
+
+
 class TokenizerCollateFn:
     """
     just applies a huggingface tokenizer to list of text. if `tracin_format` is true,

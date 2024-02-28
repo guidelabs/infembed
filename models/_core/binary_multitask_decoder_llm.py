@@ -11,6 +11,13 @@ from models._core.decoder_llm import (
 import torch.nn as nn
 
 
+"""
+this contains functions needed for the per-token decoder llm model, which makes
+binary multi-task predictions for each token.  this is used to predict the
+per-token concepts needed for training the cb-llm.
+"""
+
+
 def constructor(
     model_dim,
     key_dim,
@@ -24,6 +31,10 @@ def constructor(
     num_concepts,
     concept_generator_hidden_dims,
 ):
+    """
+    returns a decoder llm.  this is given to the `BinaryMultitaskDecoderLightningModule`
+    constructor
+    """
     decoder_layer = DecoderLayer(
         MultiAttention(model_dim, key_dim, value_dim, num_heads),
         FeedForward(model_dim, hidden_dim, dropout),
@@ -55,10 +66,13 @@ def constructor(
 
 class BinaryMultitaskDecoderLightningModule(GenericLightningModule):
     """
-    lightning module for the binary multitask (LLM) scenario.  not specialized to
-    decoders.  assumes that batch has keys for 'example_labels' (per-example labels)
-    and 'labels' (per-token labels), though they can be none.
-    will be instantiated by hydra yaml.
+    lightning module for the binary multi-task llm model, i.e. make binary multi-task
+    predictions for each token.  not specialized to decoders.
+
+    Assumptions:
+    - batch contains the keys 'labels' (per-token labels, optional) and 'example_labels'
+      (per-example labels).
+    - output contains the key 'prediction_logits' (per-token predictions)
     """
 
     _STEP_DO_NOT_LOG_KEYS = [
@@ -86,14 +100,17 @@ class BinaryMultitaskDecoderLightningModule(GenericLightningModule):
 
     def forward(self, batch):
         # output is the log probabilities for each position and token
-        prediction_logits = self.decoder.full_generate(
+        return self.decoder.full_generate(
             batch["input_ids"], batch["mask"]
         )
-        return {
-            "prediction_logits": prediction_logits,
-        }
+        # return {
+        #     "prediction_logits": prediction_logits,
+        # }
 
 
 def last_token_get_preds(out):
-    preds = out['prediction_logits']
-    return {f"task_{t}": preds[:,-1,t] for t in range(preds.shape[2])}
+    """
+    used for evaluation by torchmetrics' `MultitaskWrapper`
+    """
+    preds = out["prediction_logits"]
+    return {f"task_{t}": preds[:, -1, t] for t in range(preds.shape[2])}

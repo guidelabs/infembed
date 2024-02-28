@@ -1,0 +1,5 @@
+_target_: torch.utils.data.DataLoader
+dataset:
+  _target_: data._core.toy.ToyDataset
+batch_size: 55
+num_workers: 20

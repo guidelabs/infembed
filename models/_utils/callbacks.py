@@ -1,8 +1,7 @@
 import copy
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 from lightning.pytorch.callbacks import Callback
 import wandb
-from torchmetrics import MetricCollection
 from torchmetrics.wrappers import MultitaskWrapper
 from typing import Callable, Dict, List
 import torch
@@ -12,6 +11,10 @@ from lightning.pytorch.callbacks import BasePredictionWriter
 import torchmetrics
 import pandas as pd
 import os
+
+"""
+this contains callbacks that don't fit anywhere else
+"""
 
 
 class GenericCallback(Callback):
@@ -24,7 +27,7 @@ class GenericCallback(Callback):
 
     def on_validation_start(self, trainer, pl_module):
         if "on_validation_start" in self.hook_strings:
-            self._on_start(trainer, pl_module, "val")
+            self._on_start(trainer, pl_module, "validation")
 
     def on_train_start(self, trainer, pl_module):
         if "on_train_start" in self.hook_strings:
@@ -42,7 +45,7 @@ class GenericCallback(Callback):
 
     def on_validation_epoch_end(self, trainer, pl_module):
         if "on_validation_epoch_end" in self.hook_strings:
-            self._on_epoch_end(trainer, pl_module, "val")
+            self._on_epoch_end(trainer, pl_module, "validation")
 
     def on_train_epoch_end(self, trainer, pl_module):
         if "on_train_epoch_end" in self.hook_strings:
@@ -60,7 +63,7 @@ class GenericCallback(Callback):
 
     def on_validation_epoch_start(self, trainer, pl_module):
         if "on_validation_epoch_start" in self.hook_strings:
-            self._on_epoch_start(trainer, pl_module, "val")
+            self._on_epoch_start(trainer, pl_module, "validation")
 
     def on_train_epoch_start(self, trainer, pl_module):
         if "on_train_epoch_start" in self.hook_strings:
@@ -78,7 +81,7 @@ class GenericCallback(Callback):
 
     def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         if "on_validation_batch_end" in self.hook_strings:
-            self._on_batch_end(trainer, pl_module, outputs, batch, batch_idx, "val")
+            self._on_batch_end(trainer, pl_module, outputs, batch, batch_idx, "validation")
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         if "on_train_batch_end" in self.hook_strings:
@@ -105,53 +108,6 @@ class GenericCallback(Callback):
 
     def _on_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, phase: str):
         raise NotImplementedError
-
-
-class DecoderCallback(GenericCallback):
-    """
-    logs a single greedy generation at epoch ends
-    """
-
-    def __init__(
-        self,
-        eos_token_id: int,
-        tokenizer,
-        hook_strings: List[str],
-        max_len: Optional[int] = None,
-        num_samples_per_temperature: List[Tuple[float, int]] = {0},
-    ):
-        GenericCallback.__init__(self, hook_strings)
-        self.eos_token_id, self.tokenizer = eos_token_id, tokenizer
-        self.max_len = max_len
-        self.num_samples_per_temperature = num_samples_per_temperature
-
-    def _on_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, phase: str):
-        from models._utils.llm import GreedyDecoder
-        decoder = GreedyDecoder(
-            max_len=pl_module.max_len if self.max_len is None else self.max_len
-        )
-        rows = []
-        for temperature, num_samples in self.num_samples_per_temperature:
-            for example in batch["input_ids"]:
-                for i in range(num_samples):
-                    rows.append(
-                        [
-                            temperature,
-                            self.tokenizer.decode(example),
-                            self.tokenizer.decode(
-                                decoder(
-                                    pl_module, self.eos_token_id, example, temperature
-                                )
-                            ),
-                            i,
-                        ]
-                    )
-
-        table = wandb.Table(
-            columns=["temperature", "prompt", "generation", "trial"], data=rows
-        )
-        # pl_module.log_dict({phase: {'greedy_text': table}})
-        wandb.log({"greedy_text": table})
 
 
 def default_get_preds(out):

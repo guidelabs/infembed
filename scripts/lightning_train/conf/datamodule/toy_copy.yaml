@@ -1,10 +1,10 @@
 _target_: data._utils.common.GenericDataModule
-# train_dataloader:
-#   _target_: torch.utils.data.DataLoader
-#   dataset:
-#     _target_: data._core.toy.ToyDataset
-#   batch_size: 5
-#   num_workers: 20
+train_dataloader:
+  _target_: torch.utils.data.DataLoader
+  dataset:
+    _target_: data._core.toy.ToyDataset
+  batch_size: 5
+  num_workers: 20
 val_dataloader:
   _target_: torch.utils.data.DataLoader
   dataset:

@@ -4,6 +4,11 @@ import torch
 import lightning as L
 
 
+"""
+helpers for data that don't fit anywhere else
+"""
+
+
 class RandomSubset(Subset):
     def __init__(self, dataset: Dataset, num: int, seed=42):
         torch.manual_seed(seed)

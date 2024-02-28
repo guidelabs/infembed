@@ -5,6 +5,11 @@ from torch import Tensor
 import torch
 
 
+"""
+helpers for data relevant for cb-llm scenario
+"""
+
+
 class FnsConceptDataset(MultitaskDataset):
     """
     applies sequence of functions to example to give concepts.  each example in dataset

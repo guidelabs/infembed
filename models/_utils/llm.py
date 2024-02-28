@@ -1,3 +1,4 @@
+from typing import List, Optional, Tuple
 from data._utils.llm import subsequent_mask
 from models._utils.callbacks import GenericCallback
 from models._utils.common import MLP, clones
@@ -5,6 +6,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch
 import pandas as pd
+from torch.distributions import Categorical
+import wandb
 
 
 """
@@ -86,8 +89,6 @@ class GreedyDecoder:
         """
         `input_ids` is 1D, representing a single example.
         """
-        import pdb
-        pdb.set_trace()
         output_ids = []
         for _ in range(self.max_len - len(input_ids)):
             output = next(
@@ -116,3 +117,49 @@ class GreedyDecoder:
 
 def LLM_get_preds(outputs):
     return outputs["prediction_logits"].detach().cpu()
+
+
+class DecoderCallback(GenericCallback):
+    """
+    logs a single greedy generation at epoch ends
+    """
+
+    def __init__(
+        self,
+        eos_token_id: int,
+        tokenizer,
+        hook_strings: List[str],
+        max_len: Optional[int] = None,
+        num_samples_per_temperature: List[Tuple[float, int]] = {0},
+    ):
+        GenericCallback.__init__(self, hook_strings)
+        self.eos_token_id, self.tokenizer = eos_token_id, tokenizer
+        self.max_len = max_len
+        self.num_samples_per_temperature = num_samples_per_temperature
+
+    def _on_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, phase: str):
+        from models._utils.llm import GreedyDecoder
+        decoder = GreedyDecoder(
+            max_len=pl_module.max_len if self.max_len is None else self.max_len
+        )
+        rows = []
+        for temperature, num_samples in self.num_samples_per_temperature:
+            for example in batch["input_ids"]:
+                for i in range(num_samples):
+                    rows.append(
+                        [
+                            temperature,
+                            self.tokenizer.decode(example),
+                            self.tokenizer.decode(
+                                decoder(
+                                    pl_module, self.eos_token_id, example, temperature
+                                )
+                            ),
+                            i,
+                        ]
+                    )
+
+        table = wandb.Table(
+            columns=["temperature", "prompt", "generation", "trial"], data=rows
+        )
+        wandb.log({"greedy_text": table})

@@ -7,6 +7,11 @@ import torch
 import torch.nn.functional as F
 
 
+"""
+this contains functions needed for the decoder cb-llm.
+"""
+
+
 def constructor(
     model_dim,
     key_dim,
@@ -23,6 +28,10 @@ def constructor(
     concept_generator_hidden_dims,
     generator_hidden_dims,
 ):
+    """
+    returns a decoder cb-llm.  this is given to the `CBDecoderLightningModule`
+    constructor
+    """
     decoder_layer = DecoderLayer(
         MultiAttention(model_dim, key_dim, value_dim, num_heads),
         FeedForward(model_dim, hidden_dim, dropout),
@@ -159,7 +168,9 @@ class CBDecoder(nn.Module):
         else:
             # assert False
             use_provided = (concept_probs != -1).to(dtype=_concept_probs.dtype)
-            concept_probs = (_concept_probs * (1. - use_provided)) + (concept_probs * use_provided)
+            concept_probs = (_concept_probs * (1.0 - use_provided)) + (
+                concept_probs * use_provided
+            )
 
         concept_embeddings = (
             concept_probs[:, :, :, None] * positive_concept_embeddings
@@ -181,7 +192,13 @@ class CBDecoder(nn.Module):
 
 class CBDecoderLightningModule(GenericLightningModule):
     """
-    will be instantiated by hydra yaml
+    lightning module for the cb-llm.  not specialized to decoders.
+
+    Assumptions:
+    - batch contains the keys 'concept_labels' (per-token concept labels), 'labels'
+      (per-example concept labels for evaluation only, optional)
+    - output contains the keys 'prediction_logits' (per-token token predictions) and
+      'concept_logits' (per-token concept predictions)
     """
 
     _STEP_DO_NOT_LOG_KEYS = [

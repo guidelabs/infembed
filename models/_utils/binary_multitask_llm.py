@@ -1,39 +1,39 @@
 from typing import List
-from models._utils.common import clones
 import torch.nn as nn
 from models._utils.common import MLP, clones
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
 from models._utils.callbacks import GenericCallback
-from models._utils.callbacks import MultitaskTorchMetricsCallback, TorchMetricsCallback
-from torchmetrics import MetricCollection, AUROC
-from torchmetrics.wrappers import MultitaskWrapper
-from torchmetrics.classification import BinaryAccuracy, BinaryF1Score
+from models._utils.callbacks import MultitaskTorchMetricsCallback
+from torchmetrics import AUROC
+from torchmetrics.classification import BinaryAccuracy
+
+
+"""
+this contains functions needed for the binary multi-task scenario, independent of any
+particular model.
+"""
 
 
 class LLMBinaryMultitaskLoss(nn.Module):
+    """
+    loss function for the binary multi-task scenario, where we assume we have all the
+    per-token labels.
+    """
+
     def __init__(self, equal_batch_contribution: bool = True):
         super().__init__()
         self.equal_batch_contribution = equal_batch_contribution
 
     def forward(self, prediction_logits, attention_mask, labels):
         """
-        this loss is generic, but specialized to the CB case, the arguments are as
-        follows:
-        `prediction_logits` shape: batch size X sequence length X number concepts
-        `labels` shape: batch size X sequence length X number concepts
+        arguments description (for the cb scenario):
+        - `prediction_logits` shape: batch size X sequence length X number concepts
+        - `labels` shape: batch size X sequence length X number concepts
+
         interpretation of `concept_labels[i,t,c]`: whether for example i, concept c
         exists in x[0:i+1], i.e. the prefix ending at and including token i.
-
-        TODO: to get `concept_labels`, we will train a token-level multi-label classifier
-        and apply to each token for each concept.  training this would be non-standard,
-        because we will only assume we know whether a concept is present in a sequence, but
-        not which prefixes it is present in, i.e. we don't have token-level labels.  this is
-        a case of learning a classifier with ambiguous labels.  to start simple, for each sequence
-        for which a concept is present, we can assume the concept is present in all prefixes,
-        i.e. all token-level labels for that concept are positive.  this should actually do
-        okay, because models can handle noisy labels.
         """
 
         def _loss(_prediction_logits, _labels, _attention_mask):
@@ -61,13 +61,11 @@ class LLMBinaryMultitaskLoss(nn.Module):
             )
 
 
-class LLMMILImputeLoss(
-    nn.Module
-):  # TODO: move loss functions to own file, since they are independent of model
+class LLMMILImputeLoss(nn.Module):
     """
-    for the LLM MIL scenario (have per-example and optionally, per-token labels), imputes
-    the per-token labels to be the same as the per-example label, and applies a provided
-    per-token loss
+    loss function for the binary multi-task scenario, where only per-example labels are
+    available.  to handle this, this loss function imputes the per-token labels to be the
+    same as the per-example label, and applies a provided loss function.
     """
 
     def __init__(self, llm_loss):
@@ -85,14 +83,13 @@ class LLMMILImputeLoss(
         return self.llm_loss(
             prediction_logits, attention_mask, _labels.requires_grad_()
         )
-    
 
-class LLMMILExampleLoss(
-    nn.Module
-):  # TODO: move loss functions to own file, since they are independent of model
+
+class LLMMILExampleLoss(nn.Module):
     """
-    for the LLM MIL scenario (have per-example and optionally, per-token labels), uses
-    only the predictions for the last position and the per-example labels
+    loss function for the binary multi-task scenario, where only per-example labels are
+    available.  uses only the predictions for the last position and the per-example
+    labels.
     """
 
     def __init__(self, loss):
@@ -100,16 +97,18 @@ class LLMMILExampleLoss(
         self.loss = loss
 
     def forward(self, prediction_logits, attention_mask, labels, example_labels):
-        example_logits = _last_token_multitask_get_preds(prediction_logits, attention_mask)
+        example_logits = _last_token_multitask_get_preds(
+            prediction_logits, attention_mask
+        )
         return self.loss(example_logits, example_labels.float())
 
 
 class LLMMilMaxLoss(nn.Module):
     """
-    for the LLM MIL scenario (have per-example and optionally, per-token labels), takes
-    the max of the per-token predictions to get a per-example prediction, and gives it
-    to a provided per-example loss.
-    TODO: can try a leaky max or other aggregation function
+    loss function for the binary multi-task scenario, where only per-example labels are
+    available.  takes the max of the per-token predictions to get a per-example
+    prediction, and gives it to a provided per-example loss.
+    TODO: actually test this loss. can try a leaky max or other aggregation function
     """
 
     def __init__(self, loss):
@@ -167,8 +166,6 @@ def multitask_get_preds(outputs):
 
 
 def _last_token_multitask_get_preds(preds, attention_mask):
-    # preds = multitask_get_preds(outputs)
-    # attention_mask = batch["attention_mask"]
     last_token = (
         attention_mask.shape[1]
         - 1
@@ -193,7 +190,9 @@ def last_token_multitask_get_preds_and_target(outputs, batch):
     preds = {
         f"task_{t}": task_preds.detach().cpu()
         for (t, task_preds) in enumerate(
-            _last_token_multitask_get_preds(multitask_get_preds(outputs), batch["attention_mask"]).T
+            _last_token_multitask_get_preds(
+                multitask_get_preds(outputs), batch["attention_mask"]
+            ).T
         )
     }
 
@@ -203,7 +202,9 @@ def last_token_multitask_get_preds_and_target(outputs, batch):
     return preds, target
 
 
-def example_labels_metrics_callback(num_tasks, get_preds_and_target=last_token_multitask_get_preds_and_target):
+def example_labels_metrics_callback(
+    num_tasks, get_preds_and_target=last_token_multitask_get_preds_and_target
+):
     return MultitaskTorchMetricsCallback(
         metrics=[BinaryAccuracy(), AUROC(task="binary")],
         hook_strings=[
@@ -218,8 +219,9 @@ def example_labels_metrics_callback(num_tasks, get_preds_and_target=last_token_m
 
 class LLMBinaryMultitaskWritePredictions(GenericCallback):
     """
-    writes predictions as a file which is csv format with columns example index, then
-    a column for the predictions for each task
+    writes the predictions of a binary multi-task model.  output has a column 'i'
+    specifying the example, 't' specifying the position in the example, and remaining
+    columns are the prediction for each task.
     """
 
     def __init__(self, hook_strings: List[str], filename="predictions"):
@@ -249,7 +251,8 @@ class LLMBinaryMultitaskWritePredictions(GenericCallback):
                 for t, _pred in enumerate(pred):
                     f.write(
                         ",".join(
-                            [str(self.i), str(t)] + list(map(str, map(float, _pred)))
+                            [str(self.i), str(t)]
+                            + list(map(lambda x: f"{x:.2f}", map(float, _pred)))
                         )
                         + "\n"
                     )

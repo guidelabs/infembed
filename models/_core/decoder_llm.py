@@ -1,14 +1,14 @@
 from models._utils.common import GenericLightningModule, clones
 import torch.nn as nn
 import torch.nn.functional as F
-import lightning as L
-
-# import pytorch_lightning as pl
-import lightning.pytorch as pl
-import copy
 import torch
-from data._utils.llm import subsequent_mask
-from torch.distributions.categorical import Categorical
+
+
+"""
+this contains functions needed for the decoder llm model, which is the standard decoder
+llm architecture.  the components here are used by the binary multitask decoder llm and
+the cb-llm.
+"""
 
 
 ### define attention ###
@@ -215,7 +215,7 @@ class Decoder(nn.Module):
         return x
 
     def full_generate(self, x, mask):
-        return {'prediction_logits': self.generator(self.forward(x, mask))}
+        return {"prediction_logits": self.generator(self.forward(x, mask))}
 
     @property
     def max_len(self):
@@ -269,7 +269,11 @@ def constructor(
 
 class DecoderLightningModule(GenericLightningModule):
     """
-    will be instantiated by hydra yaml
+    lightning module for the decoder llm model.
+
+    Assumptions:
+    - batch contains the key 'labels' (per-token token labels)
+    - output contains the key 'prediction_logits' (per-token token predictions)
     """
 
     _STEP_DO_NOT_LOG_KEYS = [
@@ -294,9 +298,7 @@ class DecoderLightningModule(GenericLightningModule):
 
     def forward(self, batch):
         # output is the log probabilities for each position and token
-        return self.decoder.full_generate(
-            batch["input_ids"], batch["mask"]
-        )
+        return self.decoder.full_generate(batch["input_ids"], batch["mask"])
         # prediction_logits = self.decoder.full_generate(
         #     batch["input_ids"], batch["mask"]
         # )
@@ -306,101 +308,6 @@ class DecoderLightningModule(GenericLightningModule):
 
 
 ### DEPRECATED ###
-
-
-class _DecoderLightningModule(L.LightningModule):
-    def __init__(
-        self,
-        decoder,
-        loss_fn=None,
-        configure_optimizers=None,
-        scheduler_constructor=None,
-    ):
-        super().__init__()
-        self.decoder, self.loss_fn, self._configure_optimizers = (
-            decoder,
-            loss_fn,
-            configure_optimizers,
-        )
-        self.scheduler_constructor = scheduler_constructor
-
-    _STEP_DO_NOT_LOG_KEYS = ["output", "attention_mask", "labels", "input_ids", "mask"]
-
-    def configure_optimizers(self):
-        # optimizer = torch.optim.AdamW(
-        #     self.parameters(), lr=1e-3, betas=(0.9, 0.99), weight_decay=1e-1
-        # )
-        # from torch.optim.lr_scheduler import CosineAnnealingLR
-
-        # scheduler = CosineAnnealingLR(optimizer, T_max=8000, eta_min=6e-5)
-
-        optimizer = self._configure_optimizers(self)
-        if self.scheduler_constructor is None:
-            return optimizer
-        else:
-            scheduler = self.scheduler_constructor(optimizer=optimizer)
-            return [optimizer], [scheduler]
-
-    def _step(self, batch, batch_idx):
-        d = self.forward(batch)
-        return {
-            "loss": self.loss_fn(d["output"], batch["attention_mask"], batch["labels"]),
-            **d,
-            **batch,
-        }
-
-    def training_step(self, batch, batch_idx):
-        d = self._step(batch, batch_idx)
-        self.log_dict(
-            {
-                f"train_{key}": val
-                for (key, val) in d.items()
-                if key[0] != "_" and key not in self._STEP_DO_NOT_LOG_KEYS
-            },
-            on_step=True,
-            on_epoch=True,
-        )
-        return d
-
-    def validation_step(self, batch, batch_idx):
-        d = self._step(batch, batch_idx)
-        self.log_dict(
-            {
-                f"validation_{key}": val
-                for (key, val) in d.items()
-                if key[0] != "_" and key not in self._STEP_DO_NOT_LOG_KEYS
-            },
-            on_step=True,
-            on_epoch=True,
-        )
-        return d
-
-    def prediction_step(self, batch, batch_idx):
-        assert False
-        d = self._step(batch, batch_idx)
-        self.log_dict(
-            {
-                f"prediction_{key}": val
-                for (key, val) in d.items()
-                if key[0] != "_" and key not in self._STEP_DO_NOT_LOG_KEYS
-            },
-            on_step=True,
-            on_epoch=True,
-        )
-        return d
-
-    def forward(self, batch):
-        # output is the log probabilities for each position and token
-        output = self.decoder.full_generate(batch["input_ids"], batch["mask"])
-        # loss = self.loss_fn(output, batch['attention_mask'], batch['labels'])
-        return {
-            #     'loss': loss,
-            "output": output,
-        }
-
-    # @property
-    def max_len(self):
-        return self.decoder.max_len
 
 
 ### define how to compute loss given huggingface tokenizer output ###

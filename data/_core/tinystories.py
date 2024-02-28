@@ -1,4 +1,3 @@
-from typing import Callable, List
 from data._utils.binary_multitask_llm import (
     MultiTaskDatasetCollateFn,
     MultitaskDataset,
@@ -7,7 +6,6 @@ from data._utils.binary_multitask_llm import (
 )
 from data._utils.common import (
     LimitIterableDataset,
-    MixDataset,
     MixIterableDataset,
     RenameCollateFn,
     ReplicateDataset,
@@ -21,13 +19,17 @@ from torch.utils.data import (
     IterableDataset,
     DataLoader,
     Dataset,
-    default_collate,
     Subset,
 )
 from data._utils.llm import DecoderLLMCollateFn, TokenizerCollateFn
 import pandas as pd
 import torch
 import numpy as np
+
+
+"""
+this contains functions needed for the tinystories dataset
+"""
 
 
 class TinyStoriesDataset(IterableDataset):
@@ -54,9 +56,6 @@ class TinyStoriesDataset(IterableDataset):
 
     def __len__(self):
         return self.len
-        # import pdb
-        # pdb.set_trace()
-        # return len(list(iter(self)))
 
 
 def tinystories_tokenizer_raw():
@@ -137,7 +136,7 @@ def tinystories_cb_dataloader(
 def julius_raw_data(path, drop_weird=True):
     df = pd.read_csv(path).dropna(axis=0)
     if drop_weird:
-        df = df.loc[~df['poem'].astype(str).apply(lambda x: ('<|endoftext|>' in x))]
+        df = df.loc[~df["poem"].astype(str).apply(lambda x: ("<|endoftext|>" in x))]
     return df
 
 
@@ -170,13 +169,6 @@ class DatasetJulius(Dataset):
 
     def __iter__(self):
         return iter(self.df["concept_poem"].values)
-
-
-def cb_dataset_from_julius(path):
-    """
-    each example is the text
-    """
-    return ZipDataset(DatasetJulius(path), ConceptDatasetJulius(path))
 
 
 def tinystories_cb_dataloader_with_julius_mix(
@@ -258,64 +250,4 @@ def tinystories_cb_dataloader_with_julius_mix(
 
     return DataLoader(
         dataset, collate_fn=collate_fn, batch_size=batch_size, num_workers=num_workers
-    )
-
-
-def tinystories_cb_dataloader_with_julius_mix_read_concepts(
-    orig_path,
-    julius_path,
-    concept_path,
-    max_len,
-    batch_size,
-    orig_len=None,
-    julius_start_num=None,
-    julius_end_num=None,
-    julius_replicas=None,
-    num_workers=0,
-):
-    # below 2 datasets don't have concepts
-    orig_dataset = TinyStoriesDataset(orig_path)
-    if orig_len is not None:
-        orig_dataset = LimitIterableDataset(orig_dataset, num=orig_len)
-
-    julius_dataset = DatasetJulius(julius_path)
-    if julius_start_num is not None:
-        if julius_end_num is None:
-            julius_end_num = len(julius_dataset)
-        julius_dataset = Subset(
-            julius_dataset, np.arange(julius_start_num, julius_end_num)
-        )
-    if julius_replicas is not None:
-        julius_dataset = ReplicateDataset(julius_dataset, julius_replicas)
-
-    # mix the 2 datasets
-    dataset = MixIterableDataset(orig_dataset, julius_dataset)
-
-    # read the concept dataset
-    concept_dataset = ReadTokenMultitaskDataset(concept_path)
-
-    # zip the two kinds of datasets
-    assert len(dataset) == len(concept_dataset)
-    zip_dataset = ZipIterableDataset([dataset, concept_dataset])
-
-    # collate function is same as before
-    collate_fn = ZipCollateFn(
-        [
-            DecoderLLMCollateFn(
-                tokenizer=tinystories_tokenizer(),
-                max_len=max_len,
-            ),
-            RenameCollateFn(
-                collate_fn=TokenMultitaskDatasetCollateFn(max_len=max_len),
-                rename_map={"labels": "concept_labels"},
-            ),
-        ],
-        combiner=dict_batch_combiner,
-    )
-
-    return DataLoader(
-        zip_dataset,
-        collate_fn=collate_fn,
-        batch_size=batch_size,
-        num_workers=num_workers,
     )

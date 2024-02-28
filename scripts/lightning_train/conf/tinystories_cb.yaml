@@ -1,6 +1,6 @@
 defaults:
   - callbacks: standard
-  - datamodule: tinystories_manual_cb
+  - datamodule: tinystories_manual_cb_simplified_read_julius_only
   - model: tinystories_33M_cb
   - trainer_kwargs: standard
   - _self_

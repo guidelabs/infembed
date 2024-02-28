@@ -9,6 +9,11 @@ import lightning as L
 import torch.nn.functional as F
 
 
+"""
+this contains functions needed for building models that don't fit anywhere else
+"""
+
+
 def default_checkpoints_load_func(
     model,
     path,
@@ -233,64 +238,3 @@ def _get_module_from_name(model: nn.Module, layer_name: str) -> Any:
     """
 
     return reduce(getattr, layer_name.split("."), model)
-
-
-### DEPRECATED ###
-
-
-class _GenericLightningModel(pl.LightningModule):
-    """
-    the most basic pl wrapper whose purpose is just to train.  doesn't log anything
-    besides loss
-    """
-
-    def __init__(
-        self,
-        model: nn.Module,
-        loss_fn: Callable,
-        configure_optimizers=None,
-        batch_to_x: Callable = default_batch_to_x,
-        batch_to_target: Callable = default_batch_to_target,
-    ):
-        super().__init__()
-        self.model, self.loss_fn = model, loss_fn
-        self._configure_optimizers = configure_optimizers
-        self.batch_to_x = batch_to_x
-        self.batch_to_target = batch_to_target
-
-    def configure_optimizers(self):
-        if self._configure_optimizers is not None:
-            return self._configure_optimizers(self)
-        return torch.optim.Adam(self.parameters(), lr=self.lr)
-
-    def forward(self, x):
-        return self.model(*x)
-
-    def _step(self, batch, batch_idx):
-        # run forward
-        x = self.batch_to_x(batch)
-        y = self.batch_to_target(batch)
-        y_hat = self.forward(x)
-        loss = self.loss_fn(y_hat, y)
-        return {"loss": loss}
-
-    def training_step(self, batch, batch_idx):
-        d = self._step(batch, batch_idx)
-        self.log_dict(
-            {f"train_{key}": val for (key, val) in d.items() if key[0] != "_"}
-        )
-        return d
-
-    def validation_step(self, batch, batch_idx):
-        d = self._step(batch, batch_idx)
-        self.log_dict(
-            {f"validation_{key}": val for (key, val) in d.items() if key[0] != "_"}
-        )
-        return d
-
-    def prediction_step(self, batch, batch_idx):
-        d = self._step(batch, batch_idx)
-        self.log_dict(
-            {f"prediction_{key}": val for (key, val) in d.items() if key[0] != "_"}
-        )
-        return d

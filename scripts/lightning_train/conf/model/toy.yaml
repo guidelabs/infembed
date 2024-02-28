@@ -1,4 +1,4 @@
-_target_: models._utils.common.GenericLightningModule
+_target_: models._core.toy.ToyLightningModule
 decoder:
   _target_: models._core.toy.ToyModel
 loss_fn:
